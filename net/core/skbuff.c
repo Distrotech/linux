@@ -3244,6 +3244,83 @@ done:
 }
 EXPORT_SYMBOL_GPL(skb_gro_receive);
 
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+/* Control buffer save/restore for IMQ devices */
+struct skb_cb_table {
+	char			cb[48] __aligned(8);
+	void			*cb_next;
+	atomic_t		refcnt;
+};
+
+static DEFINE_SPINLOCK(skb_cb_store_lock);
+
+int skb_save_cb(struct sk_buff *skb)
+{
+	struct skb_cb_table *next;
+
+	next = kmem_cache_alloc(skbuff_cb_store_cache, GFP_ATOMIC);
+	if (!next)
+		return -ENOMEM;
+
+	BUILD_BUG_ON(sizeof(skb->cb) != sizeof(next->cb));
+
+	memcpy(next->cb, skb->cb, sizeof(skb->cb));
+	next->cb_next = skb->cb_next;
+
+	atomic_set(&next->refcnt, 1);
+
+	skb->cb_next = next;
+	return 0;
+}
+EXPORT_SYMBOL(skb_save_cb);
+
+int skb_restore_cb(struct sk_buff *skb)
+{
+	struct skb_cb_table *next;
+
+	if (!skb->cb_next)
+		return 0;
+
+	next = skb->cb_next;
+
+	BUILD_BUG_ON(sizeof(skb->cb) != sizeof(next->cb));
+
+	memcpy(skb->cb, next->cb, sizeof(skb->cb));
+	skb->cb_next = next->cb_next;
+
+	spin_lock(&skb_cb_store_lock);
+
+	if (atomic_dec_and_test(&next->refcnt))
+		kmem_cache_free(skbuff_cb_store_cache, next);
+
+	spin_unlock(&skb_cb_store_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL(skb_restore_cb);
+
+static void skb_copy_stored_cb(struct sk_buff *new, const struct sk_buff *__old)
+{
+	struct skb_cb_table *next;
+	struct sk_buff *old;
+
+	if (!__old->cb_next) {
+		new->cb_next = NULL;
+		return;
+	}
+
+	spin_lock(&skb_cb_store_lock);
+
+	old = (struct sk_buff *)__old;
+
+	next = old->cb_next;
+	atomic_inc(&next->refcnt);
+	new->cb_next = next;
+
+	spin_unlock(&skb_cb_store_lock);
+}
+#endif
+
 void __init skb_init(void)
 {
 	skbuff_head_cache = kmem_cache_create("skbuff_head_cache",
@@ -3547,83 +3624,6 @@ void skb_complete_wifi_ack(struct sk_buff *skb, bool acked)
 		kfree_skb(skb);
 }
 EXPORT_SYMBOL_GPL(skb_complete_wifi_ack);
-
-#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
-/* Control buffer save/restore for IMQ devices */
-struct skb_cb_table {
-	char			cb[48] __aligned(8);
-	void			*cb_next;
-	atomic_t		refcnt;
-};
-
-static DEFINE_SPINLOCK(skb_cb_store_lock);
-
-int skb_save_cb(struct sk_buff *skb)
-{
-	struct skb_cb_table *next;
-
-	next = kmem_cache_alloc(skbuff_cb_store_cache, GFP_ATOMIC);
-	if (!next)
-		return -ENOMEM;
-
-	BUILD_BUG_ON(sizeof(skb->cb) != sizeof(next->cb));
-
-	memcpy(next->cb, skb->cb, sizeof(skb->cb));
-	next->cb_next = skb->cb_next;
-
-	atomic_set(&next->refcnt, 1);
-
-	skb->cb_next = next;
-	return 0;
-}
-EXPORT_SYMBOL(skb_save_cb);
-
-int skb_restore_cb(struct sk_buff *skb)
-{
-	struct skb_cb_table *next;
-
-	if (!skb->cb_next)
-		return 0;
-
-	next = skb->cb_next;
-
-	BUILD_BUG_ON(sizeof(skb->cb) != sizeof(next->cb));
-
-	memcpy(skb->cb, next->cb, sizeof(skb->cb));
-	skb->cb_next = next->cb_next;
-
-	spin_lock(&skb_cb_store_lock);
-
-	if (atomic_dec_and_test(&next->refcnt))
-		kmem_cache_free(skbuff_cb_store_cache, next);
-
-	spin_unlock(&skb_cb_store_lock);
-
-	return 0;
-}
-EXPORT_SYMBOL(skb_restore_cb);
-
-static void skb_copy_stored_cb(struct sk_buff *new, const struct sk_buff *__old)
-{
-	struct skb_cb_table *next;
-	struct sk_buff *old;
-
-	if (!__old->cb_next) {
-		new->cb_next = NULL;
-		return;
-	}
-
-	spin_lock(&skb_cb_store_lock);
-
-	old = (struct sk_buff *)__old;
-
-	next = old->cb_next;
-	atomic_inc(&next->refcnt);
-	new->cb_next = next;
-
-	spin_unlock(&skb_cb_store_lock);
-}
-#endif
 
 /**
  * skb_partial_csum_set - set up and verify partial csum values for packet
