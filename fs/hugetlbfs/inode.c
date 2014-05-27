@@ -126,6 +126,10 @@ out:
  */
 
 #ifndef HAVE_ARCH_HUGETLB_UNMAPPED_AREA
+
+#ifndef HUGETLB_UNMAPPED_AREA_LIMIT
+#define HUGETLB_UNMAPPED_AREA_LIMIT TASK_SIZE
+#endif
 static unsigned long
 hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 		unsigned long len, unsigned long pgoff, unsigned long flags)
@@ -137,7 +141,7 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 
 	if (len & ~huge_page_mask(h))
 		return -EINVAL;
-	if (len > TASK_SIZE)
+	if (len > HUGETLB_UNMAPPED_AREA_LIMIT)
 		return -ENOMEM;
 
 	if (flags & MAP_FIXED) {
@@ -149,7 +153,7 @@ hugetlb_get_unmapped_area(struct file *file, unsigned long addr,
 	if (addr) {
 		addr = ALIGN(addr, huge_page_size(h));
 		vma = find_vma(mm, addr);
-		if (TASK_SIZE - len >= addr &&
+		if (HUGETLB_UNMAPPED_AREA_LIMIT - len >= addr &&
 		    (!vma || addr + len <= vma->vm_start))
 			return addr;
 	}
@@ -164,7 +168,7 @@ full_search:
 
 	for (vma = find_vma(mm, addr); ; vma = vma->vm_next) {
 		/* At this point:  (!vma || addr < vma->vm_end). */
-		if (TASK_SIZE - len < addr) {
+		if (HUGETLB_UNMAPPED_AREA_LIMIT - len < addr) {
 			/*
 			 * Start a new search - just in case we missed
 			 * some holes.
