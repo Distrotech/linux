@@ -158,7 +158,20 @@ int oprofilefs_ulong_from_user(unsigned long * val, char const __user * buf, siz
 /** lock for read/write safety */
 extern spinlock_t oprofilefs_lock;
 
-/**
+/* Set and get the flag indicating that the oprofile device reader expects
+ *  backtraces across the system call
+ */
+int oprofile_set_trace_thru_syscall(unsigned int enable);
+int oprofile_get_trace_thru_syscall(void);
+
+
+/*
+ * Add an escape code to the cpu buffer indicate switching into
+ * user space during tracing across the system call boundary
+ */
+int oprofile_syscall_trace_boundary(void);
+
+/*
  * Add the contents of a circular buffer to the event buffer.
  */
 void oprofile_put_buff(unsigned long *buf, unsigned int start,

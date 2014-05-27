@@ -243,10 +243,10 @@
 	}								\
 									\
 	/* RapidIO route ops */						\
-	.rio_route        : AT(ADDR(.rio_route) - LOAD_OFFSET) {	\
-		VMLINUX_SYMBOL(__start_rio_route_ops) = .;		\
-		*(.rio_route_ops)					\
-		VMLINUX_SYMBOL(__end_rio_route_ops) = .;		\
+	.rio_ops        : AT(ADDR(.rio_ops) - LOAD_OFFSET) {		\
+		VMLINUX_SYMBOL(__start_rio_switch_ops) = .;		\
+		*(.rio_switch_ops)					\
+		VMLINUX_SYMBOL(__end_rio_switch_ops) = .;		\
 	}								\
 									\
 	TRACEDATA							\
@@ -495,6 +495,7 @@
 #define BSS(bss_align)							\
 	. = ALIGN(bss_align);						\
 	.bss : AT(ADDR(.bss) - LOAD_OFFSET) {				\
+		*(.bss.superpage_aligned)				\
 		*(.bss.page_aligned)					\
 		*(.dynbss)						\
 		*(.bss)							\

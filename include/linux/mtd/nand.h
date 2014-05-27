@@ -179,8 +179,13 @@ typedef enum {
 #define NAND_HAS_CACHEPROG(chip) ((chip->options & NAND_CACHEPRG))
 #define NAND_HAS_COPYBACK(chip) ((chip->options & NAND_COPYBACK))
 /* Large page NAND with SOFT_ECC should support subpage reads */
+#ifdef CONFIG_CPU_CAVIUM_OCTEON
+/* Subpage is not supported in NAND flash used by Octeon. */
+#define NAND_SUBPAGE_READ(chip) 0
+#else
 #define NAND_SUBPAGE_READ(chip) ((chip->ecc.mode == NAND_ECC_SOFT) \
 					&& (chip->page_shift > 9))
+#endif
 
 /* Mask to zero out the chip options, which come from the id table */
 #define NAND_CHIPOPTIONS_MSK	(0x0000ffff & ~NAND_NO_AUTOINCR)
