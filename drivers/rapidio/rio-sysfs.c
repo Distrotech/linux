@@ -14,8 +14,12 @@
 #include <linux/rio.h>
 #include <linux/rio_drv.h>
 #include <linux/stat.h>
+#include <linux/capability.h>
 
 #include "rio.h"
+#ifdef CONFIG_CAVIUM_OCTEON_RAPIDIO
+extern int octeon_rio_dma_mem(struct rio_dev *rdev, uint64_t local_addr, uint64_t remote_addr, int size, int is_outbound);
+#endif
 
 /* Sysfs support */
 #define rio_config_attr(field, format_string)					\
@@ -40,9 +44,6 @@ static ssize_t routes_show(struct device *dev, struct device_attribute *attr, ch
 	char *str = buf;
 	int i;
 
-	if (!rdev->rswitch)
-		goto out;
-
 	for (i = 0; i < RIO_MAX_ROUTE_ENTRIES(rdev->net->hport->sys_size);
 			i++) {
 		if (rdev->rswitch->route_table[i] == RIO_INVALID_ROUTE)
@@ -52,7 +53,6 @@ static ssize_t routes_show(struct device *dev, struct device_attribute *attr, ch
 			    rdev->rswitch->route_table[i]);
 	}
 
-      out:
 	return (str - buf);
 }
 
@@ -63,9 +63,10 @@ struct device_attribute rio_dev_attrs[] = {
 	__ATTR_RO(asm_did),
 	__ATTR_RO(asm_vid),
 	__ATTR_RO(asm_rev),
-	__ATTR_RO(routes),
 	__ATTR_NULL,
 };
+
+static DEVICE_ATTR(routes, S_IRUGO, routes_show, NULL);
 
 static ssize_t
 rio_read_config(struct kobject *kobj, struct bin_attribute *bin_attr,
@@ -79,9 +80,9 @@ rio_read_config(struct kobject *kobj, struct bin_attribute *bin_attr,
 
 	/* Several chips lock up trying to read undefined config space */
 	if (capable(CAP_SYS_ADMIN))
-		size = 0x200000;
+		size = bin_attr->size;
 
-	if (off > size)
+	if (off >= size)
 		return 0;
 	if (off + count > size) {
 		size -= off;
@@ -148,10 +149,10 @@ rio_write_config(struct kobject *kobj, struct bin_attribute *bin_attr,
 	loff_t init_off = off;
 	u8 *data = (u8 *) buf;
 
-	if (off > 0x200000)
+	if (off >= bin_attr->size)
 		return 0;
-	if (off + count > 0x200000) {
-		size = 0x200000 - off;
+	if (off + count > bin_attr->size) {
+		size = bin_attr->size - off;
 		count = size;
 	}
 
@@ -201,10 +202,72 @@ static struct bin_attribute rio_config_attr = {
 		 .name = "config",
 		 .mode = S_IRUGO | S_IWUSR,
 		 },
-	.size = 0x200000,
+	.size = 0x1000000, /* 16MB = 21bit dword address */
 	.read = rio_read_config,
 	.write = rio_write_config,
 };
+
+static ssize_t
+rio_read_memory(struct kobject *kobj, struct bin_attribute *bin_attr,
+		char *buf, loff_t off, size_t count)
+{
+	struct rio_dev *dev =
+		to_rio_dev(container_of(kobj, struct device, kobj));
+	void *map;
+
+	if (off >= bin_attr->size)
+		return 0;
+	if (off + count > bin_attr->size)
+		count = bin_attr->size - off;
+
+#ifdef CONFIG_CAVIUM_OCTEON_RAPIDIO
+	if (count > 8) {
+		if (octeon_rio_dma_mem(dev, virt_to_phys(buf), off, count, 0))
+			return 0;
+		else
+			return count;
+	}
+#endif
+	map = rio_map_memory(dev, off, count);
+	if (!map) {
+		dev_err(&dev->dev, "Unable to map RapidIO device resource\n");
+		return 0;
+	}
+	memcpy(buf, map, count);
+	rio_unmap_memory(dev, off, count, map);
+	return count;
+}
+
+static ssize_t
+rio_write_memory(struct kobject *kobj, struct bin_attribute *bin_attr,
+		 char *buf, loff_t off, size_t count)
+{
+	struct rio_dev *dev =
+		to_rio_dev(container_of(kobj, struct device, kobj));
+	void *map;
+
+	if (off >= bin_attr->size)
+		return 0;
+	if (off + count > bin_attr->size)
+		count = bin_attr->size - off;
+
+#ifdef CONFIG_CAVIUM_OCTEON_RAPIDIO
+	if (count > 8) {
+		if (octeon_rio_dma_mem(dev, virt_to_phys(buf), off, count, 1))
+			return 0;
+		else
+			return count;
+	}
+#endif
+	map = rio_map_memory(dev, off, count);
+	if (!map) {
+		dev_err(&dev->dev, "Unable to map RapidIO device resource\n");
+		return 0;
+	}
+	memcpy(map, buf, count);
+	rio_unmap_memory(dev, off, count, map);
+	return count;
+}
 
 /**
  * rio_create_sysfs_dev_files - create RIO specific sysfs files
@@ -216,8 +279,43 @@ int rio_create_sysfs_dev_files(struct rio_dev *rdev)
 {
 	int err = 0;
 
-	err = sysfs_create_bin_file(&rdev->dev.kobj, &rio_config_attr);
+	err = device_create_bin_file(&rdev->dev, &rio_config_attr);
 
+	if (!err && rdev->rswitch) {
+		err = device_create_file(&rdev->dev, &dev_attr_routes);
+		if (!err && rdev->rswitch->sw_sysfs)
+			err = rdev->rswitch->sw_sysfs(rdev, 1);
+	}
+
+	if (err) {
+		pr_warning("RIO: Failed to create some of the atribute" \
+			" files for %s\n", rio_name(rdev));
+		return err;
+	}
+
+	rdev->memory.attr.name = "memory";
+	rdev->memory.attr.mode = S_IRUGO | S_IWUSR;
+	rdev->memory.read = rio_read_memory;
+	rdev->memory.write = rio_write_memory;
+	rdev->memory.private = NULL;
+
+	/* Prefer 50 bit addressing as it fits in kernel variables on a 64 bit
+		machine. Support for addressing 66 bits will need to be
+		revisited if anyone actually uses it */
+	if (rdev->pef & RIO_PEF_ADDR_50)
+		rdev->memory.size = (sizeof(rdev->memory.size) == 4) ? 1<<31 : 1ul << 50;
+	else if (rdev->pef & RIO_PEF_ADDR_66)
+		rdev->memory.size = (sizeof(rdev->memory.size) == 4) ? 1<<31 : 1ul << 63;
+	else if (rdev->pef & RIO_PEF_ADDR_34)
+		rdev->memory.size = (sizeof(rdev->memory.size) == 4) ? 1<<31 : 1ul << 34;
+	else
+		rdev->memory.size = 0;
+
+	if (rdev->memory.size) {
+		err = device_create_bin_file(&rdev->dev, &rdev->memory);
+		if (err)
+			rdev->memory.size = 0;
+	}
 	return err;
 }
 
@@ -229,5 +327,15 @@ int rio_create_sysfs_dev_files(struct rio_dev *rdev)
  */
 void rio_remove_sysfs_dev_files(struct rio_dev *rdev)
 {
-	sysfs_remove_bin_file(&rdev->dev.kobj, &rio_config_attr);
+	device_remove_bin_file(&rdev->dev, &rio_config_attr);
+	if (rdev->rswitch) {
+		device_remove_file(&rdev->dev, &dev_attr_routes);
+		if (rdev->rswitch->sw_sysfs)
+			rdev->rswitch->sw_sysfs(rdev, 0);
+	}
+
+	if (rdev->memory.size) {
+		device_remove_bin_file(&rdev->dev, &rdev->memory);
+		rdev->memory.size = 0;
+	}
 }
