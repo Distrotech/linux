@@ -21,6 +21,7 @@
 
 #include <linux/sched.h>
 #include <linux/oprofile.h>
+#include <linux/vmalloc.h>
 #include <linux/errno.h>
 
 #include "event_buffer.h"
@@ -456,6 +457,31 @@ fail:
 	cpu_buf->tracing = 0;
 	cpu_buf->backtrace_aborted++;
 	return;
+}
+
+/*
+ * This serves to add an escape code to indicate switching into
+ * user space during tracing across the sysetm call boundary
+ */
+int oprofile_syscall_trace_boundary(void)
+{
+	struct oprofile_cpu_buffer *cpu_buf = &__get_cpu_var(cpu_buffer);
+	int rv;
+
+	if (!cpu_buf || !cpu_buf->tracing)
+		return 0;
+
+	/* Set buffer state to user to prevent traces from being filtered out */
+	cpu_buf->last_is_kernel = 1;
+	if (op_add_code(cpu_buf, 0, 0, current) == -ENOMEM){
+		cpu_buf->tracing = 0;		
+		cpu_buf->sample_lost_overflow++;
+		rv =  0;
+	}else {
+		rv = 1;
+	}
+	
+	return rv;
 }
 
 /*
