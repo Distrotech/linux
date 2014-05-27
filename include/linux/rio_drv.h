@@ -407,11 +407,47 @@ extern struct resource *rio_request_outb_dbell(struct rio_dev *, u16, u16);
 extern int rio_release_outb_dbell(struct rio_dev *, struct resource *);
 
 /* Memory region management */
-int rio_claim_resource(struct rio_dev *, int);
-int rio_request_regions(struct rio_dev *, char *);
-void rio_release_regions(struct rio_dev *);
-int rio_request_region(struct rio_dev *, int, char *);
-void rio_release_region(struct rio_dev *, int);
+
+/**
+ * rio_map_memory - Map a RIO memory address to a kernel pointer.
+ * @rdev: RapidIO device the map is for
+ * @offset: RapidIO memory address offset into the device
+ * @length: Length of the mapped range
+ *
+ * Returns a kernel pointer to a memory mapped interface for a remote RapidIO
+ * device.
+ */
+static inline void *rio_map_memory(struct rio_dev *rdev,
+			u64 offset, u64 length)
+{
+	struct rio_mport *mport = rdev->net->hport;
+	phys_t physical = mport->ops->map(mport, rdev, offset, length);
+	if (physical)
+		return phys_to_virt(physical);
+	else
+		return NULL;
+}
+
+/**
+ * rio_unmap_memory - Unmap a RIO device mapped using rio_map_memory().
+ * @rdev: RapidIO device the resource is for
+ * @offset: RapidIO memory address offset of the map
+ * @length: Length of the mapped range
+ * @map: Kernel virtual address the resource was mapped at
+ */
+static inline void rio_unmap_memory(struct rio_dev *rdev,
+			u64 offset, u64 length, void *map)
+{
+	struct rio_mport *mport = rdev->net->hport;
+	phys_t physical = virt_to_phys(map);
+	mport->ops->unmap(mport, rdev, offset, length, physical);
+}
+
+/* Port-Write management */
+extern int rio_request_inb_pwrite(struct rio_dev *,
+		int (*)(struct rio_dev *, union rio_pw_msg*, int));
+extern int rio_release_inb_pwrite(struct rio_dev *);
+extern int rio_inb_pwrite_handler(union rio_pw_msg *pw_msg);
 
 /* LDM support */
 int rio_register_driver(struct rio_driver *);
