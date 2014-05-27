@@ -90,7 +90,7 @@ config USB_EHCI_TT_NEWSCHED
 
 config USB_EHCI_BIG_ENDIAN_MMIO
 	bool
-	depends on USB_EHCI_HCD && (PPC_CELLEB || PPC_PS3 || 440EPX || ARCH_IXP4XX)
+	depends on USB_EHCI_HCD && (PPC_CELLEB || PPC_PS3 || 440EPX || ARCH_IXP4XX || CPU_CAVIUM_OCTEON)
 	default y
 
 config USB_EHCI_BIG_ENDIAN_DESC
@@ -381,3 +381,37 @@ config USB_HWA_HCD
 
 	  To compile this driver a module, choose M here: the module
 	  will be called "hwa-hc".
+
+config USB_OCTEON_HCD
+	tristate "Octeon usb host driver" 
+	depends on USB && CPU_CAVIUM_OCTEON && !CAVIUM_OCTEON_2ND_KERNEL
+ 	default n
+        help
+          The Octeon DWC_OTG USB host controller.  All CN3XXX and
+          CN5XXX based chips with USB are supported.
+
+config USB_OCTEON_EHCI
+	bool "Octeon on-chip EHCI support"
+	depends on USB && USB_EHCI_HCD && CPU_CAVIUM_OCTEON && !CAVIUM_OCTEON_2ND_KERNEL
+	default n
+	select USB_EHCI_BIG_ENDIAN_MMIO
+	help
+	  Enable support for the Octeon II SOC's on-chip EHCI
+	  controller.  It is needed for high-speed (480Mbit/sec)
+	  USB 2.0 device support.  All CN6XXX based chips with USB are
+	  supported.
+
+config USB_OCTEON_OHCI
+	bool "Octeon on-chip OHCI support"
+	depends on USB && USB_OHCI_HCD && CPU_CAVIUM_OCTEON && !CAVIUM_OCTEON_2ND_KERNEL
+	default USB_OCTEON_EHCI
+	select USB_OHCI_BIG_ENDIAN_MMIO
+	select USB_OHCI_LITTLE_ENDIAN
+	help
+	  Enable support for the Octeon II SOC's on-chip OHCI
+	  controller.  It is needed for low-speed USB 1.0 device
+	  support.  All CN6XXX based chips with USB are supported.
+
+config USB_OCTEON2_COMMON
+	bool
+	default y if USB_OCTEON_EHCI || USB_OCTEON_OHCI
