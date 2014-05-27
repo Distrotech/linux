@@ -12,9 +12,9 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/libata.h>
+#include <linux/hrtimer.h>
 #include <linux/irq.h>
 #include <linux/platform_device.h>
-#include <linux/workqueue.h>
 #include <scsi/scsi_host.h>
 
 #include <asm/octeon/octeon.h>
@@ -35,10 +35,11 @@
 #define DRV_NAME	"pata_octeon_cf"
 #define DRV_VERSION	"2.1"
 
+/* Poll interval in nS. */
+#define OCTEON_CF_BUSY_POLL_INTERVAL 500000
 
 struct octeon_cf_port {
-	struct workqueue_struct *wq;
-	struct delayed_work delayed_finish;
+	struct hrtimer delayed_finish;
 	struct ata_port *ap;
 	int dma_finished;
 };
@@ -46,6 +47,11 @@ struct octeon_cf_port {
 static struct scsi_host_template octeon_cf_sht = {
 	ATA_PIO_SHT(DRV_NAME),
 };
+
+static int enable_dma;
+module_param(enable_dma, int, 0444);
+MODULE_PARM_DESC(enable_dma,
+		 "Enable use of DMA on interfaces that support it (0=no dma [default], 1=use dma)");
 
 /**
  * Convert nanosecond based time to setting used in the
@@ -59,18 +65,35 @@ static unsigned int ns_to_tim_reg(unsigned int tim_mult, unsigned int nsecs)
 	 * Compute # of eclock periods to get desired duration in
 	 * nanoseconds.
 	 */
-	val = DIV_ROUND_UP(nsecs * (octeon_get_clock_rate() / 1000000),
+	val = DIV_ROUND_UP(nsecs * (octeon_get_io_clock_rate() / 1000000),
 			  1000 * tim_mult);
 
 	return val;
 }
 
-static void octeon_cf_set_boot_reg_cfg(int cs)
+static void octeon_cf_set_boot_reg_cfg(int cs, unsigned int multiplier)
 {
 	union cvmx_mio_boot_reg_cfgx reg_cfg;
+	unsigned int tim_mult;
+
+	switch (multiplier) {
+	case 8:
+		tim_mult = 3;
+		break;
+	case 4:
+		tim_mult = 0;
+		break;
+	case 2:
+		tim_mult = 2;
+		break;
+	default:
+		tim_mult = 1;
+		break;
+	}
+
 	reg_cfg.u64 = cvmx_read_csr(CVMX_MIO_BOOT_REG_CFGX(cs));
 	reg_cfg.s.dmack = 0;	/* Don't assert DMACK on access */
-	reg_cfg.s.tim_mult = 2;	/* Timing mutiplier 2x */
+	reg_cfg.s.tim_mult = tim_mult;	/* Timing mutiplier */
 	reg_cfg.s.rd_dly = 0;	/* Sample on falling edge of BOOT_OE */
 	reg_cfg.s.sam = 0;	/* Don't combine write and output enable */
 	reg_cfg.s.we_ext = 0;	/* No write enable extension */
@@ -97,6 +120,7 @@ static void octeon_cf_set_piomode(struct ata_port *ap, struct ata_device *dev)
 	int T;
 	struct ata_timing timing;
 
+	unsigned int div;
 	int use_iordy;
 	int trh;
 	int pause;
@@ -105,7 +129,15 @@ static void octeon_cf_set_piomode(struct ata_port *ap, struct ata_device *dev)
 	int t2;
 	int t2i;
 
-	T = (int)(2000000000000LL / octeon_get_clock_rate());
+	/*
+	 * A divisor value of four will overflow the timing fields at
+	 * clock rates greater than 800MHz
+	 */
+	if (octeon_get_io_clock_rate() <= 800000000)
+		div = 4;
+	else
+		div = 8;
+	T = (int)((1000000000000LL * div) / octeon_get_io_clock_rate());
 
 	if (ata_timing_compute(dev, dev->pio_mode, &timing, T, T))
 		BUG();
@@ -120,18 +152,21 @@ static void octeon_cf_set_piomode(struct ata_port *ap, struct ata_device *dev)
 	if (t2i)
 		t2i--;
 
-	trh = ns_to_tim_reg(2, 20);
+	trh = ns_to_tim_reg(div, 20);
 	if (trh)
 		trh--;
 
-	pause = timing.cycle - timing.active - timing.setup - trh;
+	pause = (int)timing.cycle - (int)timing.active -
+		(int)timing.setup - trh;
+	if (pause < 0)
+		pause = 0;
 	if (pause)
 		pause--;
 
-	octeon_cf_set_boot_reg_cfg(cs);
+	octeon_cf_set_boot_reg_cfg(cs, div);
 	if (ocd->dma_engine >= 0)
 		/* True IDE mode, program both chip selects.  */
-		octeon_cf_set_boot_reg_cfg(cs + 1);
+		octeon_cf_set_boot_reg_cfg(cs + 1, div);
 
 
 	use_iordy = ata_pio_need_iordy(dev);
@@ -160,7 +195,7 @@ static void octeon_cf_set_piomode(struct ata_port *ap, struct ata_device *dev)
 	/* How long read enable is asserted */
 	reg_tim.s.oe = t2;
 	/* Time after CE that read/write starts */
-	reg_tim.s.ce = ns_to_tim_reg(2, 5);
+	reg_tim.s.ce = ns_to_tim_reg(div, 5);
 	/* Time before CE that address is valid */
 	reg_tim.s.adr = 0;
 
@@ -198,7 +233,7 @@ static void octeon_cf_set_dmamode(struct ata_port *ap, struct ata_device *dev)
 	/* not spec'ed, value in eclocks, not affected by tim_mult */
 	dma_arq = 8;
 	pause = 25 - dma_arq * 1000 /
-		(octeon_get_clock_rate() / 1000000); /* Tz */
+		(octeon_get_io_clock_rate() / 1000000); /* Tz */
 
 	oe_a = Td;
 	/* Tkr from cf spec, lengthened to meet T0 */
@@ -694,9 +729,10 @@ static irqreturn_t octeon_cf_interrupt(int irq, void *dev_instance)
 				dma_int.s.done = 1;
 				cvmx_write_csr(CVMX_MIO_BOOT_DMA_INTX(ocd->dma_engine),
 					       dma_int.u64);
-
-				queue_delayed_work(cf_port->wq,
-						   &cf_port->delayed_finish, 1);
+				hrtimer_start_range_ns(&cf_port->delayed_finish,
+						       ns_to_ktime(OCTEON_CF_BUSY_POLL_INTERVAL),
+						       OCTEON_CF_BUSY_POLL_INTERVAL / 5,
+						       HRTIMER_MODE_REL);
 				handled = 1;
 			} else {
 				handled |= octeon_cf_dma_finished(ap, qc);
@@ -708,16 +744,17 @@ static irqreturn_t octeon_cf_interrupt(int irq, void *dev_instance)
 	return IRQ_RETVAL(handled);
 }
 
-static void octeon_cf_delayed_finish(struct work_struct *work)
+static enum hrtimer_restart octeon_cf_delayed_finish(struct hrtimer *hrt)
 {
-	struct octeon_cf_port *cf_port = container_of(work,
+	struct octeon_cf_port *cf_port = container_of(hrt,
 						      struct octeon_cf_port,
-						      delayed_finish.work);
+						      delayed_finish);
 	struct ata_port *ap = cf_port->ap;
 	struct ata_host *host = ap->host;
 	struct ata_queued_cmd *qc;
 	unsigned long flags;
 	u8 status;
+	enum hrtimer_restart rv = HRTIMER_NORESTART;
 
 	spin_lock_irqsave(&host->lock, flags);
 
@@ -732,8 +769,9 @@ static void octeon_cf_delayed_finish(struct work_struct *work)
 	status = ioread8(ap->ioaddr.altstatus_addr);
 	if (status & (ATA_BUSY | ATA_DRQ)) {
 		/* Still busy, try again. */
-		queue_delayed_work(cf_port->wq,
-				   &cf_port->delayed_finish, 1);
+		hrtimer_forward_now(hrt,
+				    ns_to_ktime(OCTEON_CF_BUSY_POLL_INTERVAL));
+		rv = HRTIMER_RESTART;
 		goto out;
 	}
 	qc = ata_qc_from_tag(ap, ap->link.active_tag);
@@ -742,6 +780,7 @@ static void octeon_cf_delayed_finish(struct work_struct *work)
 		octeon_cf_dma_finished(ap, qc);
 out:
 	spin_unlock_irqrestore(&host->lock, flags);
+	return rv;
 }
 
 static void octeon_cf_dev_config(struct ata_device *dev)
@@ -901,17 +940,14 @@ static int __devinit octeon_cf_probe(struct platform_device *pdev)
 		ap->ioaddr.ctl_addr	= cs1 + (6 << 1) + 1;
 		octeon_cf_ops.sff_data_xfer = octeon_cf_data_xfer16;
 
-		ap->mwdma_mask	= ATA_MWDMA4;
+		ap->mwdma_mask	= enable_dma ? ATA_MWDMA4 : 0;
 		irq = platform_get_irq(pdev, 0);
 		irq_handler = octeon_cf_interrupt;
 
-		/* True IDE mode needs delayed work to poll for not-busy.  */
-		cf_port->wq = create_singlethread_workqueue(DRV_NAME);
-		if (!cf_port->wq)
-			goto free_cf_port;
-		INIT_DELAYED_WORK(&cf_port->delayed_finish,
-				  octeon_cf_delayed_finish);
-
+		/* True IDE mode needs a timer to poll for not-busy.  */
+		hrtimer_init(&cf_port->delayed_finish, CLOCK_MONOTONIC,
+			     HRTIMER_MODE_REL);
+		cf_port->delayed_finish.function = octeon_cf_delayed_finish;
 	} else {
 		/* 16 bit but not True IDE */
 		octeon_cf_ops.sff_data_xfer	= octeon_cf_data_xfer16;
@@ -927,6 +963,7 @@ static int __devinit octeon_cf_probe(struct platform_device *pdev)
 		ap->ioaddr.ctl_addr	= base + 0xe;
 		ap->ioaddr.altstatus_addr = base + 0xe;
 	}
+	ocd->c0 = ap->ioaddr.ctl_addr;
 
 	ata_port_desc(ap, "cmd %p ctl %p", base, ap->ioaddr.ctl_addr);
 
@@ -943,11 +980,43 @@ free_cf_port:
 	return -ENOMEM;
 }
 
+static void octeon_cf_shutdown(struct device *dev)
+{
+	struct octeon_cf_data *ocd;
+	union cvmx_mio_boot_dma_cfgx dma_cfg;
+	union cvmx_mio_boot_dma_intx dma_int;
+
+	ocd = dev->platform_data;
+
+	if (ocd->dma_engine >= 0) {
+		/* Stop and clear the dma engine.  */
+		dma_cfg.u64 = 0;
+		dma_cfg.s.size = -1;
+		cvmx_write_csr(CVMX_MIO_BOOT_DMA_CFGX(ocd->dma_engine), dma_cfg.u64);
+
+		/* Disable the interrupt.  */
+		dma_int.u64 = 0;
+		cvmx_write_csr(CVMX_MIO_BOOT_DMA_INT_ENX(ocd->dma_engine), dma_int.u64);
+
+		/* Clear the DMA complete status */
+		dma_int.s.done = 1;
+		cvmx_write_csr(CVMX_MIO_BOOT_DMA_INTX(ocd->dma_engine), dma_int.u64);
+
+		__raw_writeb(0, ocd->c0);
+		udelay(20);
+		__raw_writeb(ATA_SRST, ocd->c0);
+		udelay(20);
+		__raw_writeb(0, ocd->c0);
+		mdelay(100);
+	}
+}
+
 static struct platform_driver octeon_cf_driver = {
 	.probe		= octeon_cf_probe,
 	.driver		= {
 		.name	= DRV_NAME,
 		.owner	= THIS_MODULE,
+		.shutdown = octeon_cf_shutdown
 	},
 };
 
