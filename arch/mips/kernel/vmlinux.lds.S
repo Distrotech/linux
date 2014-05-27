@@ -5,12 +5,22 @@
 #undef mips
 #define mips mips
 OUTPUT_ARCH(mips)
+#ifdef PHYSADDR
+ENTRY(phys_entry)
+#define AT_LOCATION AT(PHYSADDR)
+#else
 ENTRY(kernel_entry)
+#define AT_LOCATION
+#endif
 PHDRS {
-	text PT_LOAD FLAGS(7);	/* RWX */
+	text PT_LOAD AT_LOCATION FLAGS(7);	/* RWX */
+#ifndef CONFIG_DISABLE_ELF_NOTE_HEADER
 	note PT_NOTE FLAGS(4);	/* R__ */
+#endif
 }
-
+#ifdef PHYSADDR
+phys_entry = kernel_entry - VMLINUX_LOAD_ADDRESS + PHYSADDR;
+#endif
 #ifdef CONFIG_32BIT
 	#ifdef CONFIG_CPU_LITTLE_ENDIAN
 		jiffies  = jiffies_64;
@@ -46,6 +56,7 @@ SECTIONS
 		SCHED_TEXT
 		LOCK_TEXT
 		KPROBES_TEXT
+		IRQENTRY_TEXT
 		*(.text.*)
 		*(.fixup)
 		*(.gnu.warning)
@@ -60,8 +71,12 @@ SECTIONS
 		*(__dbe_table)
 		__stop___dbe_table = .;
 	}
-
-	NOTES :text :note
+#ifdef CONFIG_DISABLE_ELF_NOTE_HEADER
+#define NOTES_HEADER
+#else
+#define NOTES_HEADER :note
+#endif
+	NOTES :text NOTES_HEADER
 	.dummy : { *(.dummy) } :text
 
 	RODATA
@@ -108,11 +123,13 @@ SECTIONS
 	}
 
 	PERCPU(PAGE_SIZE)
-	. = ALIGN(PAGE_SIZE);
+	. = ALIGN(0x10000);
 	__init_end = .;
 	/* freed after init ends here */
-
-	BSS_SECTION(0, 0, 0)
+	VMLINUX_SYMBOL(__bss_start) = .;
+	BSS(0x10000)
+	SBSS(0)
+	VMLINUX_SYMBOL(__bss_stop) = .;
 
 	_end = . ;
 

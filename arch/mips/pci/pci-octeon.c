@@ -17,6 +17,7 @@
 #include <asm/octeon/octeon.h>
 #include <asm/octeon/cvmx-npi-defs.h>
 #include <asm/octeon/cvmx-pci-defs.h>
+#include <asm/octeon/cvmx-pcie.h>
 #include <asm/octeon/pci-octeon.h>
 
 #define USE_OCTEON_INTERNAL_ARBITER
@@ -114,6 +115,7 @@ int pcibios_plat_dev_init(struct pci_dev *dev)
 	/* Enable the PCIe normal error reporting */
 	pos = pci_find_capability(dev, PCI_CAP_ID_EXP);
 	if (pos) {
+		pci_read_config_dword(dev, pos + PCI_EXP_DEVCAP, &dconfig);
 		/* Update Device Control */
 		pci_read_config_word(dev, pos + PCI_EXP_DEVCTL, &config);
 		/* Correctable Error Reporting */
@@ -209,16 +211,14 @@ const char *octeon_get_pci_interrupts(void)
 	case CVMX_BOARD_TYPE_NAO38:
 		/* This is really the NAC38 */
 		return "AAAAADABAAAAAAAAAAAAAAAAAAAAAAAA";
-	case CVMX_BOARD_TYPE_THUNDER:
-		return "";
-	case CVMX_BOARD_TYPE_EBH3000:
-		return "";
 	case CVMX_BOARD_TYPE_EBH3100:
 	case CVMX_BOARD_TYPE_CN3010_EVB_HS5:
 	case CVMX_BOARD_TYPE_CN3005_EVB_HS5:
 		return "AAABAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 	case CVMX_BOARD_TYPE_BBGW_REF:
 		return "AABCD";
+	case CVMX_BOARD_TYPE_THUNDER:
+	case CVMX_BOARD_TYPE_EBH3000:
 	default:
 		return "";
 	}
@@ -583,8 +583,7 @@ static int __init octeon_pci_setup(void)
 
 	/* Only use the big bars on chips that support it */
 	if (OCTEON_IS_MODEL(OCTEON_CN31XX) ||
-	    OCTEON_IS_MODEL(OCTEON_CN38XX_PASS2) ||
-	    OCTEON_IS_MODEL(OCTEON_CN38XX_PASS1))
+	    OCTEON_IS_MODEL(OCTEON_CN38XX_PASS2))
 		octeon_dma_bar_type = OCTEON_DMA_BAR_TYPE_SMALL;
 	else
 		octeon_dma_bar_type = OCTEON_DMA_BAR_TYPE_BIG;

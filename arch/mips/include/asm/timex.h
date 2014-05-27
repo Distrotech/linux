@@ -35,7 +35,11 @@ typedef unsigned int cycles_t;
 
 static inline cycles_t get_cycles(void)
 {
+#ifdef CONFIG_CPU_CAVIUM_OCTEON
+	return read_c0_count();
+#else
 	return 0;
+#endif
 }
 
 #endif /* __KERNEL__ */

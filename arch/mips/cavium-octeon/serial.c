@@ -18,11 +18,60 @@
 
 #include <asm/octeon/octeon.h>
 
+#if defined(CONFIG_CAVIUM_GDB)
+
 #ifdef CONFIG_GDB_CONSOLE
 #define DEBUG_UART 0
 #else
 #define DEBUG_UART 1
 #endif
+static irqreturn_t interrupt_debug_char(int cpl, void *dev_id)
+{
+	unsigned long lsrval;
+	unsigned long tmp;
+
+	lsrval = cvmx_read_csr(CVMX_MIO_UARTX_LSR(DEBUG_UART));
+	if (lsrval & 1) {
+#ifdef CONFIG_KGDB
+		/*
+		 * The Cavium EJTAG bootmonitor stub is not compatible
+		 * with KGDB.  We should never get here.
+		 */
+#error Illegal to use both CONFIG_KGDB and CONFIG_CAVIUM_GDB
+#endif
+		/*
+		 * Pulse MCD0 signal on Ctrl-C to stop all the
+		 * cores. Also set the MCD0 to be not masked by this
+		 * core so we know the signal is received by
+		 * someone.
+		 */
+		octeon_write_lcd("brk");
+		asm volatile ("dmfc0 %0, $22\n\t"
+			      "ori   %0, %0, 0x10\n\t"
+			      "dmtc0 %0, $22" : "=r" (tmp));
+		octeon_write_lcd("");
+		return IRQ_HANDLED;
+	}
+	return IRQ_NONE;
+}
+
+/* Enable uart1 interrupts for debugger Control-C processing */
+
+static int octeon_setup_debug_uart(void)
+{
+	if (request_irq(OCTEON_IRQ_UART0 + DEBUG_UART, interrupt_debug_char,
+			IRQF_SHARED, "KGDB", interrupt_debug_char)) {
+		panic("request_irq(%d) failed.", OCTEON_IRQ_UART0 + DEBUG_UART);
+	}
+	cvmx_write_csr(CVMX_MIO_UARTX_IER(DEBUG_UART),
+		       cvmx_read_csr(CVMX_MIO_UARTX_IER(DEBUG_UART)) | 1);
+	return 0;
+}
+
+/* Install this as early as possible to be able to debug the boot
+   sequence.  */
+core_initcall(octeon_setup_debug_uart);
+#endif	/* CONFIG_CAVIUM_GDB */
 
 unsigned int octeon_serial_in(struct uart_port *up, int offset)
 {
@@ -65,7 +114,11 @@ static void __init octeon_uart_set_common(struct plat_serial8250_port *p)
 	p->type = PORT_OCTEON;
 	p->iotype = UPIO_MEM;
 	p->regshift = 3;	/* I/O addresses are every 8 bytes */
-	p->uartclk = mips_hpt_frequency;
+	if (octeon_is_simulation())
+		/* Make simulator output fast*/
+		p->uartclk = 115200 * 16;
+	else
+		p->uartclk = octeon_get_io_clock_rate();
 	p->serial_in = octeon_serial_in;
 	p->serial_out = octeon_serial_out;
 }
@@ -97,7 +150,9 @@ static int __init octeon_serial_init(void)
 	enable_uart1 = 1;
 #endif
 #endif
-
+#ifdef CONFIG_CAVIUM_GDB
+	enable_uart1 = 0;
+#endif
 	/* Right now CN52XX is the only chip with a third uart */
 	enable_uart2 = OCTEON_IS_MODEL(OCTEON_CN52XX);
 

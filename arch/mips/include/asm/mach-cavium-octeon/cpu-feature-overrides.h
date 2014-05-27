@@ -45,8 +45,16 @@
 #define cpu_has_dc_aliases	0
 #define cpu_has_ic_fills_f_dc	0
 #define cpu_has_64bits		1
+#define cpu_has_3k_cache	0
+#define cpu_has_4k_cache	0
+#define cpu_has_tx39_cache	0
 #define cpu_has_octeon_cache	1
-#define cpu_has_saa		octeon_has_saa()
+#ifdef CONFIG_CAVIUM_OCTEON2
+#define cpu_has_saa		1
+#define cpu_has_octeon2_isa	1
+#else
+#define cpu_has_saa             octeon_has_saa()
+#endif
 #define cpu_has_mips32r1	0
 #define cpu_has_mips32r2	0
 #define cpu_has_mips64r1	0
@@ -54,25 +62,16 @@
 #define cpu_has_mips_r2_exec_hazard 0
 #define cpu_has_dsp		0
 #define cpu_has_mipsmt		0
-#define cpu_has_userlocal	0
 #define cpu_has_vint		0
 #define cpu_has_veic		0
 #define cpu_hwrena_impl_bits	0xc0000000
-#define ARCH_HAS_READ_CURRENT_TIMER 1
+
+#define kernel_uses_smartmips_rixi (cpu_data[0].cputype != CPU_CAVIUM_OCTEON)
+
 #define ARCH_HAS_IRQ_PER_CPU	1
 #define ARCH_HAS_SPINLOCK_PREFETCH 1
 #define spin_lock_prefetch(x) prefetch(x)
 #define PREFETCH_STRIDE 128
-
-static inline int read_current_timer(unsigned long *result)
-{
-	asm volatile ("rdhwr %0,$31\n"
-#ifndef CONFIG_64BIT
-		      "\tsll %0, 0"
-#endif
-		      : "=r" (*result));
-	return 0;
-}
 
 static inline int octeon_has_saa(void)
 {

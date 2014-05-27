@@ -107,18 +107,6 @@ typedef struct { unsigned long pte; } pte_t;
 typedef struct page *pgtable_t;
 
 /*
- * For 3-level pagetables we defines these ourselves, for 2-level the
- * definitions are supplied by <asm-generic/pgtable-nopmd.h>.
- */
-#ifdef CONFIG_64BIT
-
-typedef struct { unsigned long pmd; } pmd_t;
-#define pmd_val(x)	((x).pmd)
-#define __pmd(x)	((pmd_t) { (x) } )
-
-#endif
-
-/*
  * Right now we don't support 4-level pagetables, so all pud-related
  * definitions come from <asm-generic/pgtable-nopud.h>.
  */
@@ -162,7 +150,15 @@ typedef struct { unsigned long pgprot; } pgprot_t;
     ((unsigned long)(x) - PAGE_OFFSET + PHYS_OFFSET)
 #endif
 #define __va(x)		((void *)((unsigned long)(x) + PAGE_OFFSET - PHYS_OFFSET))
-#define __pa_symbol(x)	__pa(RELOC_HIDE((unsigned long)(x), 0))
+
+#ifndef __ASSEMBLY__
+# ifdef CONFIG_MAPPED_KERNEL
+extern unsigned long phys_to_kernel_offset;
+#  define __pa_symbol(x)	(RELOC_HIDE((unsigned long)(x), 0) - phys_to_kernel_offset)
+# else
+#  define __pa_symbol(x)	__pa(RELOC_HIDE((unsigned long)(x), 0))
+# endif
+#endif
 
 #define pfn_to_kaddr(pfn)	__va((pfn) << PAGE_SHIFT)
 
@@ -200,8 +196,10 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 #define VM_DATA_DEFAULT_FLAGS	(VM_READ | VM_WRITE | VM_EXEC | \
 				 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)
 
-#define UNCAC_ADDR(addr)	((addr) - PAGE_OFFSET + UNCAC_BASE)
-#define CAC_ADDR(addr)		((addr) - UNCAC_BASE + PAGE_OFFSET)
+#define UNCAC_ADDR(addr)	((addr) - PAGE_OFFSET + UNCAC_BASE + 	\
+								PHYS_OFFSET)
+#define CAC_ADDR(addr)		((addr) - UNCAC_BASE + PAGE_OFFSET -	\
+								PHYS_OFFSET)
 
 #include <asm-generic/memory_model.h>
 #include <asm-generic/getorder.h>

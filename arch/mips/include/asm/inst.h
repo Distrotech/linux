@@ -61,6 +61,7 @@ enum spec_op {
 enum spec2_op {
 	madd_op, maddu_op, mul_op, spec2_3_unused_op,
 	msub_op, msubu_op, /* more unused ops */
+	cvm_op = 0x1f,
 	clz_op = 0x20, clo_op,
 	dclz_op = 0x24, dclo_op,
 	sdbpp_op = 0x3f
@@ -72,6 +73,7 @@ enum spec2_op {
 enum spec3_op {
 	ext_op, dextm_op, dextu_op, dext_op,
 	ins_op, dinsm_op, dinsu_op, dins_op,
+	lx_op = 0x0a,
 	bshfl_op = 0x20,
 	dbshfl_op = 0x24,
 	rdhwr_op = 0x3b
@@ -179,6 +181,26 @@ enum mad_func {
 };
 
 /*
+ * func field for special2 cavium opcodes.
+ */
+enum cvm_func {
+	zcb_op = 0x1c, zcbt_op = 0x1d
+};
+
+/*
+ * func field for special3 lx opcodes (Cavium Octeon).
+ */
+enum lx_func {
+	lwx_op	= 0x00,
+	lhx_op	= 0x04,
+	lbux_op	= 0x06,
+	ldx_op	= 0x08,
+	lwux_op	= 0x10,
+	lhux_op	= 0x14,
+	lbx_op	= 0x16,
+};
+
+/*
  * Damn ...  bitfields depend from byteorder :-(
  */
 #ifdef __MIPSEB__
@@ -245,6 +267,12 @@ struct ma_format {	/* FPU multipy and add format (MIPS IV) */
 	unsigned int fd : 5;
 	unsigned int func : 4;
 	unsigned int fmt : 2;
+};
+
+struct b_format { /* BREAK and SYSCALL */
+	unsigned int opcode:6;
+	unsigned int code:20;
+	unsigned int func:6;
 };
 
 #elif defined(__MIPSEL__)
@@ -314,6 +342,12 @@ struct ma_format {	/* FPU multipy and add format (MIPS IV) */
 	unsigned int opcode : 6;
 };
 
+struct b_format { /* BREAK and SYSCALL */
+	unsigned int func:6;
+	unsigned int code:20;
+	unsigned int opcode:6;
+};
+
 #else /* !defined (__MIPSEB__) && !defined (__MIPSEL__) */
 #error "MIPS but neither __MIPSEL__ nor __MIPSEB__?"
 #endif
@@ -329,6 +363,7 @@ union mips_instruction {
 	struct r_format r_format;
 	struct f_format f_format;
         struct ma_format ma_format;
+	struct b_format b_format;
 };
 
 /* HACHACHAHCAHC ...  */

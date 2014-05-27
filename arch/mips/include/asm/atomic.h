@@ -49,7 +49,15 @@
  */
 static __inline__ void atomic_add(int i, atomic_t * v)
 {
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_saa) {
+		__asm__ __volatile__(
+		".set	push\n\t"
+		".set	arch=octeon\n\t"
+		"saa    %1, (%2)\t# atomic_add (%0)\n\t"
+		".set	pop"
+		: "+m" (v->counter)
+		: "r" (i), "r" (&v->counter));
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		int temp;
 
 		__asm__ __volatile__(
@@ -69,10 +77,7 @@ static __inline__ void atomic_add(int i, atomic_t * v)
 		"1:	ll	%0, %1		# atomic_add		\n"
 		"	addu	%0, %2					\n"
 		"	sc	%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter));
@@ -94,7 +99,15 @@ static __inline__ void atomic_add(int i, atomic_t * v)
  */
 static __inline__ void atomic_sub(int i, atomic_t * v)
 {
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_saa) {
+		__asm__ __volatile__(
+		".set	push\n\t"
+		".set	arch=octeon\n\t"
+		"saa    %1, (%2)\t# atomic_sub(%0)\n\t"
+		".set	pop"
+		: "+m" (v->counter)
+		: "r" (-i), "r" (&v->counter));
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		int temp;
 
 		__asm__ __volatile__(
@@ -114,10 +127,7 @@ static __inline__ void atomic_sub(int i, atomic_t * v)
 		"1:	ll	%0, %1		# atomic_sub		\n"
 		"	subu	%0, %2					\n"
 		"	sc	%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter));
@@ -137,9 +147,27 @@ static __inline__ int atomic_add_return(int i, atomic_t * v)
 {
 	int result;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_octeon2_isa && kernel_uses_llsc) {
+		/*
+		 * For proper barrier semantics, the preceding
+		 * smp_mb__before_llsc() must expand to syncw.
+		 */
+		if (__builtin_constant_p(i) && i == 1)
+			__asm__ __volatile__("lai\t%0,(%2)\t# atomic_add_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else if (__builtin_constant_p(i) && i == -1)
+			__asm__ __volatile__("lad\t%0,(%2)\t# atomic_add_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else
+			__asm__ __volatile__("laa\t%0,(%2),%3\t# atomic_add_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter), "r" (i));
+		result += i;
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		int temp;
 
 		__asm__ __volatile__(
@@ -161,11 +189,8 @@ static __inline__ int atomic_add_return(int i, atomic_t * v)
 		"1:	ll	%1, %2		# atomic_add_return	\n"
 		"	addu	%0, %1, %3				\n"
 		"	sc	%0, %2					\n"
-		"	beqz	%0, 2f					\n"
+		"	beqz	%0, 1b					\n"
 		"	addu	%0, %1, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)
@@ -189,9 +214,27 @@ static __inline__ int atomic_sub_return(int i, atomic_t * v)
 {
 	int result;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_octeon2_isa && kernel_uses_llsc) {
+		/*
+		 * For proper barrier semantics, the preceding
+		 * smp_mb__before_llsc() must expand to syncw.
+		 */
+		if (__builtin_constant_p(i) && i == -1)
+			__asm__ __volatile__("lai\t%0,(%2)\t# atomic_sub_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else if (__builtin_constant_p(i) && i == 1)
+			__asm__ __volatile__("lad\t%0,(%2)\t# atomic_sub_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else
+			__asm__ __volatile__("laa\t%0,(%2),%3\t# atomic_sub_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter), "r" (-i));
+		result -= i;
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		int temp;
 
 		__asm__ __volatile__(
@@ -213,11 +256,8 @@ static __inline__ int atomic_sub_return(int i, atomic_t * v)
 		"1:	ll	%1, %2		# atomic_sub_return	\n"
 		"	subu	%0, %1, %3				\n"
 		"	sc	%0, %2					\n"
-		"	beqz	%0, 2f					\n"
+		"	beqz	%0, 1b					\n"
 		"	subu	%0, %1, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)
@@ -249,7 +289,7 @@ static __inline__ int atomic_sub_if_positive(int i, atomic_t * v)
 {
 	int result;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		int temp;
@@ -279,12 +319,9 @@ static __inline__ int atomic_sub_if_positive(int i, atomic_t * v)
 		"	bltz	%0, 1f					\n"
 		"	sc	%0, %2					\n"
 		"	.set	noreorder				\n"
-		"	beqz	%0, 2f					\n"
+		"	beqz	%0, 1b					\n"
 		"	 subu	%0, %1, %3				\n"
 		"	.set	reorder					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
 		"1:							\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
@@ -428,13 +465,21 @@ static __inline__ int atomic_add_unless(atomic_t *v, int a, int u)
  */
 static __inline__ void atomic64_add(long i, atomic64_t * v)
 {
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_saa) {
+		__asm__ __volatile__(
+		".set	push\n\t"
+		".set	arch=octeon\n\t"
+		"saad   %1, (%2)\t# atomic64_add (%0)\n\t"
+		".set	pop"
+		: "+m" (v->counter)
+		: "r" (i), "r" (v));
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		long temp;
 
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%0, %1		# atomic64_add		\n"
-		"	addu	%0, %2					\n"
+		"	daddu	%0, %2					\n"
 		"	scd	%0, %1					\n"
 		"	beqzl	%0, 1b					\n"
 		"	.set	mips0					\n"
@@ -446,12 +491,9 @@ static __inline__ void atomic64_add(long i, atomic64_t * v)
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%0, %1		# atomic64_add		\n"
-		"	addu	%0, %2					\n"
+		"	daddu	%0, %2					\n"
 		"	scd	%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter));
@@ -473,13 +515,21 @@ static __inline__ void atomic64_add(long i, atomic64_t * v)
  */
 static __inline__ void atomic64_sub(long i, atomic64_t * v)
 {
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_saa) {
+		__asm__ __volatile__(
+		".set	push\n\t"
+		".set	arch=octeon\n\t"
+		"saad    %1, (%2)\t# atomic64_sub (%0)\n\t"
+		".set	pop"
+		: "+m" (v->counter)
+		: "r" (-i), "r" (v));
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		long temp;
 
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%0, %1		# atomic64_sub		\n"
-		"	subu	%0, %2					\n"
+		"	dsubu	%0, %2					\n"
 		"	scd	%0, %1					\n"
 		"	beqzl	%0, 1b					\n"
 		"	.set	mips0					\n"
@@ -491,12 +541,9 @@ static __inline__ void atomic64_sub(long i, atomic64_t * v)
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%0, %1		# atomic64_sub		\n"
-		"	subu	%0, %2					\n"
+		"	dsubu	%0, %2					\n"
 		"	scd	%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter));
@@ -516,18 +563,36 @@ static __inline__ long atomic64_add_return(long i, atomic64_t * v)
 {
 	long result;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_octeon2_isa && kernel_uses_llsc) {
+		/*
+		 * For proper barrier semantics, the preceding
+		 * smp_mb__before_llsc() must expand to syncw.
+		 */
+		if (__builtin_constant_p(i) && i == 1)
+			__asm__ __volatile__("laid\t%0,(%2)\t# atomic64_add_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else if (__builtin_constant_p(i) && i == -1)
+			__asm__ __volatile__("ladd\t%0,(%2)\t# atomic64_add_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else
+			__asm__ __volatile__("laad\t%0,(%2),%3\t# atomic64_add_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter), "r" (i));
+		result += i;
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		long temp;
 
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%1, %2		# atomic64_add_return	\n"
-		"	addu	%0, %1, %3				\n"
+		"	daddu	%0, %1, %3				\n"
 		"	scd	%0, %2					\n"
 		"	beqzl	%0, 1b					\n"
-		"	addu	%0, %1, %3				\n"
+		"	daddu	%0, %1, %3				\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)
@@ -538,13 +603,10 @@ static __inline__ long atomic64_add_return(long i, atomic64_t * v)
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%1, %2		# atomic64_add_return	\n"
-		"	addu	%0, %1, %3				\n"
+		"	daddu	%0, %1, %3				\n"
 		"	scd	%0, %2					\n"
-		"	beqz	%0, 2f					\n"
-		"	addu	%0, %1, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
+		"	daddu	%0, %1, %3				\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)
@@ -568,18 +630,36 @@ static __inline__ long atomic64_sub_return(long i, atomic64_t * v)
 {
 	long result;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	if (cpu_has_octeon2_isa && kernel_uses_llsc) {
+		/*
+		 * For proper barrier semantics, the preceding
+		 * smp_mb__before_llsc() must expand to syncw.
+		 */
+		if (__builtin_constant_p(i) && i == -1)
+			__asm__ __volatile__("laid\t%0,(%2)\t# atomic64_sub_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else if (__builtin_constant_p(i) && i == 1)
+			__asm__ __volatile__("ladd\t%0,(%2)\t# atomic64_sub_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter));
+		else
+			__asm__ __volatile__("laad\t%0,(%2),%3\t# atomic64_sub_return (%1)"
+					: "=r" (result), "+m" (v->counter)
+					: "r" (&v->counter), "r" (-i));
+		result -= i;
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		long temp;
 
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%1, %2		# atomic64_sub_return	\n"
-		"	subu	%0, %1, %3				\n"
+		"	dsubu	%0, %1, %3				\n"
 		"	scd	%0, %2					\n"
 		"	beqzl	%0, 1b					\n"
-		"	subu	%0, %1, %3				\n"
+		"	dsubu	%0, %1, %3				\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)
@@ -590,13 +670,10 @@ static __inline__ long atomic64_sub_return(long i, atomic64_t * v)
 		__asm__ __volatile__(
 		"	.set	mips3					\n"
 		"1:	lld	%1, %2		# atomic64_sub_return	\n"
-		"	subu	%0, %1, %3				\n"
+		"	dsubu	%0, %1, %3				\n"
 		"	scd	%0, %2					\n"
-		"	beqz	%0, 2f					\n"
-		"	subu	%0, %1, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
+		"	dsubu	%0, %1, %3				\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)
@@ -628,7 +705,7 @@ static __inline__ long atomic64_sub_if_positive(long i, atomic64_t * v)
 {
 	long result;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		long temp;
@@ -658,12 +735,9 @@ static __inline__ long atomic64_sub_if_positive(long i, atomic64_t * v)
 		"	bltz	%0, 1f					\n"
 		"	scd	%0, %2					\n"
 		"	.set	noreorder				\n"
-		"	beqz	%0, 2f					\n"
+		"	beqz	%0, 1b					\n"
 		"	 dsubu	%0, %1, %3				\n"
 		"	.set	reorder					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
 		"1:							\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
@@ -788,9 +862,9 @@ static __inline__ int atomic64_add_unless(atomic64_t *v, long a, long u)
  * atomic*_return operations are serializing but not the non-*_return
  * versions.
  */
-#define smp_mb__before_atomic_dec()	smp_llsc_mb()
+#define smp_mb__before_atomic_dec()	smp_mb__before_llsc()
 #define smp_mb__after_atomic_dec()	smp_llsc_mb()
-#define smp_mb__before_atomic_inc()	smp_llsc_mb()
+#define smp_mb__before_atomic_inc()	smp_mb__before_llsc()
 #define smp_mb__after_atomic_inc()	smp_llsc_mb()
 
 #include <asm-generic/atomic-long.h>

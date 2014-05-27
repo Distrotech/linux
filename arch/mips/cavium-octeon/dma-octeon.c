@@ -30,6 +30,7 @@
 
 #ifdef CONFIG_PCI
 #include <asm/octeon/pci-octeon.h>
+#include <asm/octeon/cvmx-pcie.h>
 #endif
 
 #define BAR2_PCI_ADDRESS 0x8000000000ul
@@ -83,6 +84,34 @@ dma_addr_t octeon_map_dma_mem(struct device *dev, void *ptr, size_t size)
 		return physical;
 
 	switch (octeon_dma_bar_type) {
+	case OCTEON_DMA_BAR_TYPE_PCIE2:
+		if (unlikely(physical < (16ul << 10)))
+			panic("dma_map_single: Not allowed to map first 16KB."
+			  " It interferes with BAR0 special area\n");
+		else if ((physical + size >= (256ul << 20)) &&
+			(physical < (512ul << 20)))
+			panic("dma_map_single: Not allowed to map bootbus\n");
+		else if (physical >= CVMX_PCIE_BAR1_PHYS_BASE &&
+			physical + size < (CVMX_PCIE_BAR1_PHYS_BASE + CVMX_PCIE_BAR1_PHYS_SIZE)) {
+			result = physical - CVMX_PCIE_BAR1_PHYS_BASE + CVMX_PCIE_BAR1_RC_BASE;
+
+			if (((result+size-1) & dma_mask) != result+size-1)
+				panic("dma_map_single: Attempt to map address 0x%llx-0x%llx, which can't be accessed "
+			      "according to the dma mask 0x%llx\n",
+			      physical, physical+size-1, dma_mask);
+			goto done;
+		}
+		else if (physical + size >= 0x2010000000ull)
+			panic("dma_map_single: Attempt to map illegal memory"
+			   " address 0x%llx\n", physical);
+		result = physical;
+		if (((result+size-1) & dma_mask) != result+size-1)
+			panic("dma_map_single: Attempt to map address "
+			   "0x%llx-0x%llx, which can't be accessed according to"
+			   " the dma mask 0x%llx\n", physical, physical+size-1,
+			   dma_mask);
+		goto done;
+
 	case OCTEON_DMA_BAR_TYPE_PCIE:
 		if (unlikely(physical < (16ul << 10)))
 			panic("dma_map_single: Not allowed to map first 16KB."
@@ -99,13 +128,17 @@ dma_addr_t octeon_map_dma_mem(struct device *dev, void *ptr, size_t size)
 			panic("dma_map_single: "
 			      "Attempt to map illegal memory address 0x%llx\n",
 			      physical);
-		else if ((physical + size >=
-			  (4ull<<30) - (OCTEON_PCI_BAR1_HOLE_SIZE<<20))
-			 && physical < (4ull<<30))
-			pr_warning("dma_map_single: Warning: "
-				   "Mapping memory address that might "
-				   "conflict with devices 0x%llx-0x%llx\n",
-				   physical, physical+size-1);
+		else if (physical >= CVMX_PCIE_BAR1_PHYS_BASE &&
+			physical + size < (CVMX_PCIE_BAR1_PHYS_BASE + CVMX_PCIE_BAR1_PHYS_SIZE)) {
+			result = physical - CVMX_PCIE_BAR1_PHYS_BASE + CVMX_PCIE_BAR1_RC_BASE;
+
+			if (((result+size-1) & dma_mask) != result+size-1)
+				panic("dma_map_single: Attempt to map address 0x%llx-0x%llx, which can't be accessed "
+			      "according to the dma mask 0x%llx\n",
+			      physical, physical+size-1, dma_mask);
+			goto done;
+		}
+
 		/* The 2nd 256MB is mapped at 256<<20 instead of 0x410000000 */
 		if ((physical >= 0x410000000ull) && physical < 0x420000000ull)
 			result = physical - 0x400000000ull;
@@ -155,7 +188,8 @@ dma_addr_t octeon_map_dma_mem(struct device *dev, void *ptr, size_t size)
 				      OCTEON_PCI_BAR1_HOLE_SIZE);
 			result = physical;
 			goto done;
-		} else if ((physical >= 0x410000000ull) &&
+		} else if (!OCTEON_IS_MODEL(OCTEON_CN63XX) && 
+			   (physical >= 0x410000000ull) &&
 			   (physical < 0x420000000ull)) {
 			if (unlikely(physical + size > 0x420000000ull))
 				panic("dma_map_single: Requested memory spans "
@@ -277,6 +311,7 @@ void octeon_unmap_dma_mem(struct device *dev, dma_addr_t dma_addr)
 		return;
 
 	switch (octeon_dma_bar_type) {
+	case OCTEON_DMA_BAR_TYPE_PCIE2:
 	case OCTEON_DMA_BAR_TYPE_PCIE:
 		/* Nothing to do, all mappings are static */
 		goto done;

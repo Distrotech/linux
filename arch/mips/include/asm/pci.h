@@ -162,6 +162,9 @@ static inline int pci_get_legacy_ide_irq(struct pci_dev *dev, int channel)
 	return channel ? 15 : 14;
 }
 
+/* MSI arch hook */
+#define arch_setup_msi_irqs arch_setup_msi_irqs
+
 extern int pci_probe_only;
 
 extern char * (*pcibios_plat_setup)(char *str);

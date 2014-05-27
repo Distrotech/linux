@@ -80,7 +80,7 @@ void __init clocksource_set_clock(struct clocksource *cs, unsigned int clock)
 	for (shift = 32; shift > 0; shift--) {
 		temp = (u64) NSEC_PER_SEC << shift;
 		do_div(temp, clock);
-		if ((temp >> 32) == 0)
+		if ((temp >> 31) == 0)
 			break;
 	}
 	cs->shift = shift;
@@ -97,7 +97,7 @@ void __cpuinit clockevent_set_clock(struct clock_event_device *cd,
 	for (shift = 32; shift > 0; shift--) {
 		temp = (u64) clock << shift;
 		do_div(temp, NSEC_PER_SEC);
-		if ((temp >> 32) == 0)
+		if ((temp >> 31) == 0)
 			break;
 	}
 	cd->shift = shift;

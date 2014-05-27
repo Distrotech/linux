@@ -80,6 +80,7 @@ extern unsigned long mips_machtype;
 #define BOOT_MEM_RAM		1
 #define BOOT_MEM_ROM_DATA	2
 #define BOOT_MEM_RESERVED	3
+#define BOOT_MEM_INIT_RAM	4
 
 /*
  * A memory map that's built upon what was determined
@@ -95,6 +96,7 @@ struct boot_mem_map {
 };
 
 extern struct boot_mem_map boot_mem_map;
+extern int initrd_in_reserved;
 
 extern void add_memory_region(phys_t start, phys_t size, long type);
 

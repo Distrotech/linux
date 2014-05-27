@@ -17,6 +17,7 @@
 extern struct op_mips_model op_model_mipsxx_ops __attribute__((weak));
 extern struct op_mips_model op_model_rm9000_ops __attribute__((weak));
 extern struct op_mips_model op_model_loongson2_ops __attribute__((weak));
+extern struct op_mips_model op_model_octeon  __attribute__((weak));
 
 static struct op_mips_model *model;
 
@@ -97,7 +98,12 @@ int __init oprofile_arch_init(struct oprofile_operations *ops)
 	case CPU_LOONGSON2:
 		lmodel = &op_model_loongson2_ops;
 		break;
-	};
+	case CPU_CAVIUM_OCTEON:
+	case CPU_CAVIUM_OCTEON_PLUS:
+	case CPU_CAVIUM_OCTEON2:
+                lmodel = &op_model_octeon;
+                break;
+        };
 
 	if (!lmodel)
 		return -ENODEV;

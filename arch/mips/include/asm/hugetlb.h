@@ -11,6 +11,7 @@
 
 #include <asm/page.h>
 
+#define HUGETLB_UNMAPPED_AREA_LIMIT STACK_TOP
 
 static inline int is_hugepage_only_range(struct mm_struct *mm,
 					 unsigned long addr,

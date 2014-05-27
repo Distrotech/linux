@@ -42,7 +42,7 @@
 /*
  * clear_bit() doesn't provide any barrier for the compiler.
  */
-#define smp_mb__before_clear_bit()	smp_llsc_mb()
+#define smp_mb__before_clear_bit()	smp_mb__before_llsc()
 #define smp_mb__after_clear_bit()	smp_llsc_mb()
 
 /*
@@ -77,10 +77,7 @@ static inline void set_bit(unsigned long nr, volatile unsigned long *addr)
 		"1:	" __LL "%0, %1			# set_bit	\n"
 		"	" __INS "%0, %4, %2, 1				\n"
 		"	" __SC "%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		: "=&r" (temp), "=m" (*m)
 		: "ir" (bit), "m" (*m), "r" (~0));
 #endif /* CONFIG_CPU_MIPSR2 */
@@ -90,10 +87,7 @@ static inline void set_bit(unsigned long nr, volatile unsigned long *addr)
 		"1:	" __LL "%0, %1			# set_bit	\n"
 		"	or	%0, %2					\n"
 		"	" __SC	"%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (temp), "=m" (*m)
 		: "ir" (1UL << bit), "m" (*m));
@@ -142,10 +136,7 @@ static inline void clear_bit(unsigned long nr, volatile unsigned long *addr)
 		"1:	" __LL "%0, %1			# clear_bit	\n"
 		"	" __INS "%0, $0, %2, 1				\n"
 		"	" __SC "%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		: "=&r" (temp), "=m" (*m)
 		: "ir" (bit), "m" (*m));
 #endif /* CONFIG_CPU_MIPSR2 */
@@ -155,10 +146,7 @@ static inline void clear_bit(unsigned long nr, volatile unsigned long *addr)
 		"1:	" __LL "%0, %1			# clear_bit	\n"
 		"	and	%0, %2					\n"
 		"	" __SC "%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (temp), "=m" (*m)
 		: "ir" (~(1UL << bit)), "m" (*m));
@@ -224,10 +212,7 @@ static inline void change_bit(unsigned long nr, volatile unsigned long *addr)
 		"1:	" __LL "%0, %1		# change_bit	\n"
 		"	xor	%0, %2				\n"
 		"	" __SC	"%0, %1				\n"
-		"	beqz	%0, 2f				\n"
-		"	.subsection 2				\n"
-		"2:	b	1b				\n"
-		"	.previous				\n"
+		"	beqz	%0, 1b				\n"
 		"	.set	mips0				\n"
 		: "=&r" (temp), "=m" (*m)
 		: "ir" (1UL << bit), "m" (*m));
@@ -258,7 +243,7 @@ static inline int test_and_set_bit(unsigned long nr,
 	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long res;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		unsigned long *m = ((unsigned long *) addr) + (nr >> SZLONG_LOG);
@@ -286,12 +271,8 @@ static inline int test_and_set_bit(unsigned long nr,
 		"1:	" __LL "%0, %1		# test_and_set_bit	\n"
 		"	or	%2, %0, %3				\n"
 		"	" __SC	"%2, %1					\n"
-		"	beqz	%2, 2f					\n"
+		"	beqz	%2, 1b					\n"
 		"	 and	%2, %0, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	 nop						\n"
-		"	.previous					\n"
 		"	.set	pop					\n"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "r" (1UL << bit), "m" (*m)
@@ -354,12 +335,8 @@ static inline int test_and_set_bit_lock(unsigned long nr,
 		"1:	" __LL "%0, %1		# test_and_set_bit	\n"
 		"	or	%2, %0, %3				\n"
 		"	" __SC	"%2, %1					\n"
-		"	beqz	%2, 2f					\n"
+		"	beqz	%2, 1b					\n"
 		"	 and	%2, %0, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	 nop						\n"
-		"	.previous					\n"
 		"	.set	pop					\n"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "r" (1UL << bit), "m" (*m)
@@ -395,7 +372,7 @@ static inline int test_and_clear_bit(unsigned long nr,
 	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long res;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		unsigned long *m = ((unsigned long *) addr) + (nr >> SZLONG_LOG);
@@ -423,10 +400,7 @@ static inline int test_and_clear_bit(unsigned long nr,
 		"	" __EXT "%2, %0, %3, 1				\n"
 		"	" __INS	"%0, $0, %3, 1				\n"
 		"	" __SC 	"%0, %1					\n"
-		"	beqz	%0, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%0, 1b					\n"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "ir" (bit), "m" (*m)
 		: "memory");
@@ -443,12 +417,8 @@ static inline int test_and_clear_bit(unsigned long nr,
 		"	or	%2, %0, %3				\n"
 		"	xor	%2, %3					\n"
 		"	" __SC 	"%2, %1					\n"
-		"	beqz	%2, 2f					\n"
+		"	beqz	%2, 1b					\n"
 		"	 and	%2, %0, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	 nop						\n"
-		"	.previous					\n"
 		"	.set	pop					\n"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "r" (1UL << bit), "m" (*m)
@@ -485,7 +455,7 @@ static inline int test_and_change_bit(unsigned long nr,
 	unsigned short bit = nr & SZLONG_MASK;
 	unsigned long res;
 
-	smp_llsc_mb();
+	smp_mb__before_llsc();
 
 	if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		unsigned long *m = ((unsigned long *) addr) + (nr >> SZLONG_LOG);
@@ -513,12 +483,8 @@ static inline int test_and_change_bit(unsigned long nr,
 		"1:	" __LL	"%0, %1		# test_and_change_bit	\n"
 		"	xor	%2, %0, %3				\n"
 		"	" __SC	"\t%2, %1				\n"
-		"	beqz	%2, 2f					\n"
+		"	beqz	%2, 1b					\n"
 		"	 and	%2, %0, %3				\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	 nop						\n"
-		"	.previous					\n"
 		"	.set	pop					\n"
 		: "=&r" (temp), "=m" (*m), "=&r" (res)
 		: "r" (1UL << bit), "m" (*m)
@@ -556,6 +522,7 @@ static inline void __clear_bit_unlock(unsigned long nr, volatile unsigned long *
 {
 	smp_mb();
 	__clear_bit(nr, addr);
+	nudge_writes();
 }
 
 /*
@@ -700,7 +667,30 @@ static inline int ffs(int word)
 #ifdef __KERNEL__
 
 #include <asm-generic/bitops/sched.h>
+
+#ifdef CONFIG_CPU_CAVIUM_OCTEON
+static inline unsigned int hweight32(unsigned int w)
+{
+	return __builtin_popcount(w);
+}
+
+static inline unsigned long hweight64(__u64 w)
+{
+	return __builtin_popcountll(w);
+}
+
+static inline unsigned int hweight16(unsigned int w)
+{
+	return __builtin_popcount(w & 0xffff);
+}
+
+static inline unsigned int hweight8(unsigned int w)
+{
+	return __builtin_popcount(w & 0xff);
+}
+#else
 #include <asm-generic/bitops/hweight.h>
+#endif
 #include <asm-generic/bitops/ext2-non-atomic.h>
 #include <asm-generic/bitops/ext2-atomic.h>
 #include <asm-generic/bitops/minix.h>

@@ -25,6 +25,7 @@
 #include <linux/ptrace.h>
 #include <linux/kgdb.h>
 #include <linux/kdebug.h>
+#include <linux/kprobes.h>
 
 #include <asm/bootinfo.h>
 #include <asm/branch.h>
@@ -48,6 +49,7 @@
 #include <asm/types.h>
 #include <asm/stacktrace.h>
 #include <asm/irq.h>
+#include <asm/uasm.h>
 
 extern void check_wait(void);
 extern asmlinkage void r4k_wait(void);
@@ -81,6 +83,18 @@ extern int fpu_emulator_cop1Handler(struct pt_regs *xcp,
 
 #ifdef CONFIG_CPU_CAVIUM_OCTEON
 extern asmlinkage void octeon_cop2_restore(struct octeon_cop2_state *task);
+#endif
+
+#ifdef CONFIG_REPLACE_EMULATED_ACCESS_TO_THREAD_POINTER
+/* 	0 - Use the normal kernel emulation without any changes.
+	1 - Replace emulated instructions with direct accesses to the thread
+		register.
+	2 - Replace emulated instructions and log the replacement PC.
+	3 - Replace emulated instructions with break instructions. This will
+		cause programs to fail, but makes it easy to stop gdb on the
+		instruction. */
+static int thread_pointer_mode;
+module_param(thread_pointer_mode, int, 0644);
 #endif
 
 void (*board_be_init)(void);
@@ -329,7 +343,7 @@ void show_regs(struct pt_regs *regs)
 	__show_regs((struct pt_regs *)regs);
 }
 
-void show_registers(const struct pt_regs *regs)
+void show_registers(struct pt_regs *regs)
 {
 	const int field = 2 * sizeof(unsigned long);
 
@@ -353,9 +367,10 @@ void show_registers(const struct pt_regs *regs)
 
 static DEFINE_SPINLOCK(die_lock);
 
-void __noreturn die(const char * str, const struct pt_regs * regs)
+void __noreturn die(const char * str, struct pt_regs * regs)
 {
 	static int die_counter;
+	int sig = SIGSEGV;
 #ifdef CONFIG_MIPS_MT_SMTC
 	unsigned long dvpret = dvpe();
 #endif /* CONFIG_MIPS_MT_SMTC */
@@ -366,6 +381,10 @@ void __noreturn die(const char * str, const struct pt_regs * regs)
 #ifdef CONFIG_MIPS_MT_SMTC
 	mips_mt_regdump(dvpret);
 #endif /* CONFIG_MIPS_MT_SMTC */
+
+	if (notify_die(DIE_OOPS, str, regs, 0, current->thread.trap_no, SIGSEGV) == NOTIFY_STOP)
+		sig = 0;
+
 	printk("%s[#%d]:\n", str, ++die_counter);
 	show_registers(regs);
 	add_taint(TAINT_DIE);
@@ -380,7 +399,7 @@ void __noreturn die(const char * str, const struct pt_regs * regs)
 		panic("Fatal exception");
 	}
 
-	do_exit(SIGSEGV);
+	do_exit(sig);
 }
 
 extern struct exception_table_entry __start___dbe_table[];
@@ -766,6 +785,25 @@ asmlinkage void do_bp(struct pt_regs *regs)
 	if (bcode >= (1 << 10))
 		bcode >>= 10;
 
+	/*
+	 * notify the kprobe handlers, if instruction is likely to
+	 * pertain to them.
+	 */
+	switch (bcode) {
+	case BRK_KPROBE_BP:
+		if (notify_die(DIE_BREAK, "debug", regs, bcode, 0, 0) == NOTIFY_STOP)
+			return;
+		else
+			break;
+	case BRK_KPROBE_SSTEPBP:
+		if (notify_die(DIE_SSTEPBP, "single_step", regs, bcode, 0, 0) == NOTIFY_STOP)
+			return;
+		else
+			break;
+	default:
+		break;
+	}
+
 	do_trap_or_bp(regs, bcode, "Break");
 	return;
 
@@ -791,6 +829,53 @@ out_sigsegv:
 	force_sig(SIGSEGV, current);
 }
 
+static void __handle_thread_pointer_mode(struct pt_regs *regs, unsigned int opcode, unsigned int __user *epc)
+{
+#ifdef CONFIG_REPLACE_EMULATED_ACCESS_TO_THREAD_POINTER
+	if ((opcode & OPCODE) == SPEC3 && (opcode & FUNC) == RDHWR) {
+		int rd = (opcode & RD) >> 11;
+		int rt = (opcode & RT) >> 16;
+		switch (rd) {
+		case 29:
+			if (thread_pointer_mode) {
+				/* move [rt], k0 */
+				unsigned int new_instruction
+					= 0x00000025 | (26 << 21) | (rt << 11);
+				if (thread_pointer_mode == 3)
+					/* break */
+					new_instruction = 0x0000000d;
+				if (access_process_vm(current, 
+					    (unsigned long)epc, 
+					    &new_instruction,
+					    sizeof(new_instruction), 1) 
+				    != sizeof(new_instruction))
+					printk(KERN_ERR \
+			"Failed to replaced emulated RDHWR at PC=%p\n", epc);
+				if (thread_pointer_mode == 2)
+					printk(KERN_INFO \
+			"Replaced emulated RDHWR at PC=%p with \"move $%d, k0\"\n"
+					, epc, rt);
+				else if (thread_pointer_mode == 3)
+					printk(KERN_INFO \
+			"Replaced emulated RDHWR at PC=%p with \"break\"\n", epc);
+			}
+			break;
+		}
+
+	} else if (opcode == (0x00000025 | (26 << 21) | (3 << 11))) {
+		/*
+		 * Its a 'move v1, k0' instruction.
+		 * We need to flush the icache, not emulate an
+		 * instruction. The EPC is wrong, so we need to put it
+		 * back to the old instruction.
+		 */
+		/*printk(KERN_INFO "Already replaced emulated RDHWR at PC=%p\n", epc); */
+		regs->cp0_epc = (unsigned long)epc;
+		flush_cache_sigtramp((unsigned long)epc);
+	}
+#endif
+}
+
 asmlinkage void do_ri(struct pt_regs *regs)
 {
 	unsigned int __user *epc = (unsigned int __user *)exception_epc(regs);
@@ -814,7 +899,10 @@ asmlinkage void do_ri(struct pt_regs *regs)
 		status = simulate_llsc(regs, opcode);
 
 	if (status < 0)
+	{
+		__handle_thread_pointer_mode(regs, opcode, epc);
 		status = simulate_rdhwr(regs, opcode);
+	}
 
 	if (status < 0)
 		status = simulate_sync(regs, opcode);
@@ -887,7 +975,10 @@ asmlinkage void do_cpu(struct pt_regs *regs)
 			status = simulate_llsc(regs, opcode);
 
 		if (status < 0)
+		{
+			__handle_thread_pointer_mode(regs, opcode, epc);
 			status = simulate_rdhwr(regs, opcode);
+		}
 
 		if (status < 0)
 			status = SIGILL;
@@ -1243,21 +1334,25 @@ unsigned long ebase;
 unsigned long exception_handlers[32];
 unsigned long vi_handlers[64];
 
-/*
- * As a side effect of the way this is implemented we're limited
- * to interrupt handlers in the address range from
- * KSEG0 <= x < KSEG0 + 256mb on the Nevada.  Oh well ...
- */
-void *set_except_vector(int n, void *addr)
+void __init *set_except_vector(int n, void *addr)
 {
 	unsigned long handler = (unsigned long) addr;
 	unsigned long old_handler = exception_handlers[n];
 
 	exception_handlers[n] = handler;
 	if (n == 0 && cpu_has_divec) {
-		*(u32 *)(ebase + 0x200) = 0x08000000 |
-					  (0x03ffffff & (handler >> 2));
-		local_flush_icache_range(ebase + 0x200, ebase + 0x204);
+		unsigned long jump_mask = ~((1 << 28) - 1);
+		u32 *buf = (u32 *)(ebase + 0x200);
+		unsigned int k0 = 26;
+		if ((handler & jump_mask) == ((ebase + 0x200) & jump_mask)) {
+			uasm_i_j(&buf, handler & ~jump_mask);
+			uasm_i_nop(&buf);
+		} else {
+			UASM_i_LA(&buf, k0, handler);
+			uasm_i_jr(&buf, k0);
+			uasm_i_nop(&buf);
+		}
+		local_flush_icache_range(ebase + 0x200, (unsigned long)buf);
 	}
 	return (void *)old_handler;
 }
@@ -1527,6 +1622,8 @@ void __cpuinit per_cpu_trap_init(void)
 			evpe(vpflags);
 		} else
 			set_c0_cause(CAUSEF_IV);
+	} else {
+		clear_c0_cause(CAUSEF_IV);
 	}
 
 	/*
@@ -1550,7 +1647,6 @@ void __cpuinit per_cpu_trap_init(void)
 #endif /* CONFIG_MIPS_MT_SMTC */
 
 	cpu_data[cpu].asid_cache = ASID_FIRST_VERSION;
-	TLBMISS_HANDLER_SETUP();
 
 	atomic_inc(&init_mm.mm_count);
 	current->active_mm = &init_mm;
@@ -1572,6 +1668,7 @@ void __cpuinit per_cpu_trap_init(void)
 		write_c0_wired(0);
 	}
 #endif /* CONFIG_MIPS_MT_SMTC */
+	TLBMISS_HANDLER_SETUP();
 }
 
 /* Install CPU exception handler */
@@ -1592,12 +1689,7 @@ static char panic_null_cerr[] __cpuinitdata =
 void __cpuinit set_uncached_handler(unsigned long offset, void *addr,
 	unsigned long size)
 {
-#ifdef CONFIG_32BIT
-	unsigned long uncached_ebase = KSEG1ADDR(ebase);
-#endif
-#ifdef CONFIG_64BIT
-	unsigned long uncached_ebase = TO_UNCAC(ebase);
-#endif
+	unsigned long uncached_ebase = CKSEG1ADDR(ebase);
 
 	if (!addr)
 		panic(panic_null_cerr);
@@ -1634,7 +1726,7 @@ void __init trap_init(void)
 		ebase = (unsigned long)
 			__alloc_bootmem(size, 1 << fls(size), 0);
 	} else {
-		ebase = CAC_BASE;
+		ebase = CKSEG0;
 		if (cpu_has_mips_r2)
 			ebase += (read_c0_ebase() & 0x3ffff000);
 	}

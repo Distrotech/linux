@@ -12,7 +12,7 @@
 # for "archclean" cleaning up for this architecture.
 #
 
-KBUILD_DEFCONFIG := ip22_defconfig
+KBUILD_DEFCONFIG := cavium-octeon_defconfig
 
 #
 # Select the object file format to substitute into the linker script.
@@ -48,7 +48,16 @@ ifneq ($(SUBARCH),$(ARCH))
   endif
 endif
 
+ifndef CONFIG_FUNCTION_TRACER
 cflags-y := -ffunction-sections
+endif
+ifdef CONFIG_FUNCTION_GRAPH_TRACER
+  ifndef KBUILD_MCOUNT_RA_ADDRESS
+    ifeq ($(call cc-option-yn,-mmcount-ra-address), y)
+      cflags-y += -mmcount-ra-address -DKBUILD_MCOUNT_RA_ADDRESS
+    endif
+  endif
+endif
 cflags-y += $(call cc-option, -mno-check-zero-division)
 
 ifdef CONFIG_32BIT
@@ -83,7 +92,10 @@ all-$(CONFIG_BOOT_ELF64)	:= $(vmlinux-64)
 cflags-y			+= -G 0 -mno-abicalls -fno-pic -pipe
 cflags-y			+= -msoft-float
 LDFLAGS_vmlinux			+= -G 0 -static -n -nostdlib
+
+ifndef CONFIG_MAPPED_KERNEL
 MODFLAGS			+= -mlong-calls
+endif
 
 cflags-y += -ffreestanding
 
@@ -149,10 +161,41 @@ cflags-$(CONFIG_CPU_SB1)	+= $(call cc-option,-march=sb1,-march=r5000) \
 cflags-$(CONFIG_CPU_R8000)	+= -march=r8000 -Wa,--trap
 cflags-$(CONFIG_CPU_R10000)	+= $(call cc-option,-march=r10000,-march=r8000) \
 			-Wa,--trap
-cflags-$(CONFIG_CPU_CAVIUM_OCTEON) += $(call cc-option,-march=octeon) -Wa,--trap
-ifeq (,$(findstring march=octeon, $(cflags-$(CONFIG_CPU_CAVIUM_OCTEON))))
-cflags-$(CONFIG_CPU_CAVIUM_OCTEON) += -Wa,-march=octeon
+
+ifdef CONFIG_CPU_CAVIUM_OCTEON
+ifdef CONFIG_CAVIUM_OCTEON2
+cflags-y += $(call cc-option,-march=octeon2) -Wa,--trap
+ifeq (,$(findstring march=octeon2, $(cflags-y)))
+cflags-y += -Wa,-march=octeon2
 endif
+else
+cflags-y += $(call cc-option,-march=octeon) -Wa,--trap
+ifeq (,$(findstring march=octeon, $(cflags-y)))
+cflags-y += -Wa,-march=octeon
+endif
+endif
+endif
+
+cflags-$(CONFIG_CAVIUM_CN63XXP1) += -Wa,-mfix-cn63xxp1
+
+cflags-$(CONFIG_CPU_CAVIUM_OCTEON) += -DCVMX_BUILD_FOR_LINUX_KERNEL=1 -DUSE_RUNTIME_MODEL_CHECKS=1
+
+ifdef  CONFIG_CAVIUM_OCTEON_CHK_CVMX_PARAMETER
+cflags-y += -DCVMX_ENABLE_PARAMETER_CHECKING=1
+else
+cflags-y += -DCVMX_ENABLE_PARAMETER_CHECKING=0
+endif
+ifdef  CONFIG_CAVIUM_OCTEON_CHK_CVMX_ADDRESS
+cflags-y += -DCVMX_ENABLE_CSR_ADDRESS_CHECKING=1
+else
+cflags-y += -DCVMX_ENABLE_CSR_ADDRESS_CHECKING=0
+endif
+ifdef  CONFIG_CAVIUM_OCTEON_CHK_CVMX_POW
+cflags-y += -DCVMX_ENABLE_POW_CHECKS=1
+else
+cflags-y += -DCVMX_ENABLE_POW_CHECKS=0
+endif
+
 
 cflags-$(CONFIG_CPU_R4000_WORKAROUNDS)	+= $(call cc-option,-mfix-r4000,)
 cflags-$(CONFIG_CPU_R4400_WORKAROUNDS)	+= $(call cc-option,-mfix-r4400,)
@@ -626,6 +669,13 @@ endif
 
 cflags-y			+= -I$(srctree)/arch/mips/include/asm/mach-generic
 drivers-$(CONFIG_PCI)		+= arch/mips/pci/
+
+ifdef CONFIG_MAPPED_KERNEL
+  load-y = 0xffffffffc0000000
+endif
+
+
+#obj-$(CONFIG_KPROBES)		+= kprobes.o
 
 #
 # Automatically detect the build format. By default we choose

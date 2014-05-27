@@ -5,6 +5,13 @@ config MIPS
 	select HAVE_IDE
 	select HAVE_OPROFILE
 	select HAVE_ARCH_KGDB
+	select HAVE_FUNCTION_TRACER
+	select HAVE_FUNCTION_TRACE_MCOUNT_TEST
+	select HAVE_DYNAMIC_FTRACE
+	select HAVE_FTRACE_MCOUNT_RECORD
+	select HAVE_FUNCTION_GRAPH_TRACER
+	select HAVE_KPROBES
+	select HAVE_KRETPROBES
 	# Horrible source of confusion.  Die, die, die ...
 	select EMBEDDED
 	select RTC_LIB if !LEMOTE_FULOONG2E
@@ -18,7 +25,7 @@ config ZONE_DMA
 
 choice
 	prompt "System type"
-	default SGI_IP22
+	default CAVIUM_OCTEON_REFERENCE_BOARD
 
 config MACH_ALCHEMY
 	bool "Alchemy processor based machines"
@@ -501,6 +508,7 @@ config SIBYTE_SWARM
 	bool "Sibyte BCM91250A-SWARM"
 	select BOOT_ELF32
 	select DMA_COHERENT
+	select HAVE_PATA_PLATFORM
 	select NR_CPUS_DEFAULT_2
 	select SIBYTE_SB1250
 	select SWAP_IO_SPACE
@@ -515,6 +523,7 @@ config SIBYTE_LITTLESUR
 	depends on EXPERIMENTAL
 	select BOOT_ELF32
 	select DMA_COHERENT
+	select HAVE_PATA_PLATFORM
 	select NR_CPUS_DEFAULT_2
 	select SIBYTE_SB1250
 	select SWAP_IO_SPACE
@@ -636,8 +645,9 @@ config CAVIUM_OCTEON_SIMULATOR
 	select DMA_COHERENT
 	select SYS_SUPPORTS_64BIT_KERNEL
 	select SYS_SUPPORTS_BIG_ENDIAN
-	select SYS_SUPPORTS_HIGHMEM
 	select SYS_SUPPORTS_HOTPLUG_CPU
+	select SYS_SUPPORTS_KGDB
+	select SYS_HAS_EARLY_PRINTK
 	select SYS_HAS_CPU_CAVIUM_OCTEON
 	help
 	  The Octeon simulator is software performance model of the Cavium
@@ -651,13 +661,14 @@ config CAVIUM_OCTEON_REFERENCE_BOARD
 	select DMA_COHERENT
 	select SYS_SUPPORTS_64BIT_KERNEL
 	select SYS_SUPPORTS_BIG_ENDIAN
-	select SYS_SUPPORTS_HIGHMEM
 	select SYS_SUPPORTS_HOTPLUG_CPU
+	select SYS_SUPPORTS_KGDB
 	select SYS_HAS_EARLY_PRINTK
 	select SYS_HAS_CPU_CAVIUM_OCTEON
 	select SWAP_IO_SPACE
 	select HW_HAS_PCI
 	select ARCH_SUPPORTS_MSI
+	select ZONE_DMA32
 	help
 	  This option supports all of the Octeon reference boards from Cavium
 	  Networks. It builds a kernel that dynamically determines the Octeon
@@ -713,7 +724,7 @@ config GENERIC_FIND_NEXT_BIT
 
 config GENERIC_HWEIGHT
 	bool
-	default y
+	default y if !CPU_CAVIUM_OCTEON
 
 config GENERIC_CALIBRATE_DELAY
 	bool
@@ -893,6 +904,9 @@ config CPU_LITTLE_ENDIAN
 
 endchoice
 
+config EXPORT_UASM
+	bool
+
 config SYS_SUPPORTS_APM_EMULATION
 	bool
 
@@ -904,7 +918,7 @@ config SYS_SUPPORTS_LITTLE_ENDIAN
 
 config SYS_SUPPORTS_HUGETLBFS
 	bool
-	depends on CPU_SUPPORTS_HUGEPAGES && 64BIT
+	depends on CPU_SUPPORTS_HUGEPAGES && 64BIT && !PAGE_SIZE_64KB
 	default y
 
 config IRQ_CPU
@@ -1283,7 +1297,6 @@ config CPU_CAVIUM_OCTEON
 	select SYS_SUPPORTS_SMP
 	select NR_CPUS_DEFAULT_16
 	select WEAK_ORDERING
-	select WEAK_REORDERING_BEYOND_LLSC
 	select CPU_SUPPORTS_HIGHMEM
 	select CPU_SUPPORTS_HUGEPAGES
 	help
@@ -1413,6 +1426,9 @@ config CPU_SUPPORTS_64BIT_KERNEL
 	bool
 config CPU_SUPPORTS_HUGEPAGES
 	bool
+config MIPS_PGD_C0_CONTEXT
+	bool
+	default y if 64BIT && CPU_MIPSR2
 
 #
 # Set to y for ptrace access to watch registers.
@@ -1497,6 +1513,45 @@ config PAGE_SIZE_64KB
 	  writing this option is still high experimental.
 
 endchoice
+
+config FORCE_MAX_ZONEORDER
+	int "Maximum zone order"
+	range 13 64 if SYS_SUPPORTS_HUGETLBFS && PAGE_SIZE_32KB
+	default "13" if SYS_SUPPORTS_HUGETLBFS && PAGE_SIZE_32KB
+	range 12 64 if SYS_SUPPORTS_HUGETLBFS && PAGE_SIZE_16KB
+	default "12" if SYS_SUPPORTS_HUGETLBFS && PAGE_SIZE_16KB
+	range 11 64
+	default "11"
+	help
+	  The kernel memory allocator divides physically contiguous memory
+	  blocks into "zones", where each zone is a power of two number of
+	  pages.  This option selects the largest power of two that the kernel
+	  keeps in the memory allocator.  If you need to allocate very large
+	  blocks of physically contiguous memory, then you may need to
+	  increase this value.
+
+	  This config option is actually maximum order plus one. For example,
+	  a value of 11 means that the largest free memory block is 2^10 pages.
+
+	  The page size is not necessarily 4KB.  Keep this in mind
+	  when choosing a value for this option.
+
+config MAPPED_KERNEL
+	bool "Mapped kernel"
+	help
+	  Select this option if you want the kernel's code and data to
+	  be in mapped memory.  The kernel will be mapped using a
+	  single wired TLB entry, thus reducing the number of
+	  available TLB entries by one.  Kernel modules will be able
+	  to use a more efficient calling convention.
+
+config PHYS_LOAD_ADDRESS
+	hex "Physical load address"
+	depends on MAPPED_KERNEL
+	default 0xffffffff81000000
+	help
+	  The physical load address reflected as the program header
+	  physical address in the kernel ELF image.
 
 config BOARD_SCACHE
 	bool

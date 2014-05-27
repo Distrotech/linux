@@ -120,6 +120,8 @@ register struct thread_info *__current_thread_info __asm__("$28");
 #define TIF_32BIT_ADDR		23	/* 32-bit address space (o32/n32) */
 #define TIF_FPUBOUND		24	/* thread bound to FPU-full CPU set */
 #define TIF_LOAD_WATCH		25	/* If set, load watch registers */
+#define TIF_XKPHYS_MEM_EN	26
+#define TIF_XKPHYS_IO_EN	27
 #define TIF_SYSCALL_TRACE	31	/* syscall trace active */
 
 #ifdef CONFIG_MIPS32_O32
@@ -137,6 +139,8 @@ register struct thread_info *__current_thread_info __asm__("$28");
 #define _TIF_RESTORE_SIGMASK	(1<<TIF_RESTORE_SIGMASK)
 #define _TIF_USEDFPU		(1<<TIF_USEDFPU)
 #define _TIF_POLLING_NRFLAG	(1<<TIF_POLLING_NRFLAG)
+#define _TIF_XKPHYS_MEM_EN	(1<<TIF_XKPHYS_MEM_EN) 
+#define _TIF_XKPHYS_IO_EN	(1<<TIF_XKPHYS_IO_EN)
 #define _TIF_FREEZE		(1<<TIF_FREEZE)
 #define _TIF_FIXADE		(1<<TIF_FIXADE)
 #define _TIF_LOGADE		(1<<TIF_LOGADE)

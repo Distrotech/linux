@@ -95,7 +95,25 @@ static inline unsigned long __xchg_u32(volatile int * m, unsigned int val)
 {
 	__u32 retval;
 
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	smp_mb__before_llsc();
+
+	if (cpu_has_octeon2_isa && kernel_uses_llsc) {
+		if (__builtin_constant_p(val) && val == 0)
+			__asm__ __volatile__("lac\t%0,(%1)\t# xchg_u32"
+					: "=r" (retval)
+					: "r" (m)
+					: "memory");
+		else if (__builtin_constant_p(val) && val == 0xffffffffu)
+			__asm__ __volatile__("las\t%0,(%1)\t# xchg_u32"
+					: "=r" (retval)
+					: "r" (m)
+					: "memory");
+		else
+			__asm__ __volatile__("law\t%0,(%1),%2\t# xchg_u32"
+					: "=r" (retval)
+					: "r" (m), "r" (val)
+					: "memory");
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		unsigned long dummy;
 
 		__asm__ __volatile__(
@@ -120,10 +138,7 @@ static inline unsigned long __xchg_u32(volatile int * m, unsigned int val)
 		"	move	%2, %z4					\n"
 		"	.set	mips3					\n"
 		"	sc	%2, %1					\n"
-		"	beqz	%2, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%2, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (retval), "=m" (*m), "=&r" (dummy)
 		: "R" (*m), "Jr" (val)
@@ -147,7 +162,25 @@ static inline __u64 __xchg_u64(volatile __u64 * m, __u64 val)
 {
 	__u64 retval;
 
-	if (kernel_uses_llsc && R10000_LLSC_WAR) {
+	smp_mb__before_llsc();
+
+	if (cpu_has_octeon2_isa && kernel_uses_llsc) {
+		if (__builtin_constant_p(val) && val == 0)
+			__asm__ __volatile__("lacd\t%0,(%1)\t# xchg_u64"
+					: "=r" (retval)
+					: "r" (m)
+					: "memory");
+		else if (__builtin_constant_p(val) && val == 0xffffffffffffffffull)
+			__asm__ __volatile__("lasd\t%0,(%1)\t# xchg_u64"
+					: "=r" (retval)
+					: "r" (m)
+					: "memory");
+		else
+			__asm__ __volatile__("lawd\t%0,(%1),%2\t# xchg_u64"
+					: "=r" (retval)
+					: "r" (m), "r" (val)
+					: "memory");
+	} else if (kernel_uses_llsc && R10000_LLSC_WAR) {
 		unsigned long dummy;
 
 		__asm__ __volatile__(
@@ -168,10 +201,7 @@ static inline __u64 __xchg_u64(volatile __u64 * m, __u64 val)
 		"1:	lld	%0, %3			# xchg_u64	\n"
 		"	move	%2, %z4					\n"
 		"	scd	%2, %1					\n"
-		"	beqz	%2, 2f					\n"
-		"	.subsection 2					\n"
-		"2:	b	1b					\n"
-		"	.previous					\n"
+		"	beqz	%2, 1b					\n"
 		"	.set	mips0					\n"
 		: "=&r" (retval), "=m" (*m), "=&r" (dummy)
 		: "R" (*m), "Jr" (val)

@@ -135,6 +135,12 @@
 #define FPU_CSR_COND7   0x80000000      /* $fcc7 */
 
 /*
+ * Bits 18 - 20 of the FPU Status Register will be read as 0,
+ * and should be written as zero.
+ */
+#define FPU_CSR_RSVD	0x001c0000
+
+/*
  * X the exception cause indicator
  * E the exception enable
  * S the sticky/flag bit
@@ -161,7 +167,8 @@
 #define FPU_CSR_UDF_S   0x00000008
 #define FPU_CSR_INE_S   0x00000004
 
-/* rounding mode */
+/* Bits 0 and 1 of FPU Status Register specify the rounding mode */
+#define FPU_CSR_RM	0x00000003
 #define FPU_CSR_RN      0x0     /* nearest */
 #define FPU_CSR_RZ      0x1     /* towards zero */
 #define FPU_CSR_RU      0x2     /* towards +Infinity */
@@ -249,6 +256,14 @@
 #define PL_16M		24
 #define PL_64M		26
 #define PL_256M		28
+
+/*
+ * PageGrain bits
+ */
+#define PG_RIE		(_ULCAST_(1) <<  31)
+#define PG_XIE		(_ULCAST_(1) <<  30)
+#define PG_ELPA		(_ULCAST_(1) <<  29)
+#define PG_ESP		(_ULCAST_(1) <<  28)
 
 /*
  * R4x00 interrupt enable / cause bits
@@ -393,6 +408,7 @@
 #define  STATUSB_IP15		7
 #define  STATUSF_IP15		(_ULCAST_(1) <<  7)
 #define ST0_CH			0x00040000
+#define ST0_NMI			0x00080000
 #define ST0_SR			0x00100000
 #define ST0_TS			0x00200000
 #define ST0_BEV			0x00400000
@@ -564,6 +580,10 @@
 #define MIPS_CONF3_DSP		(_ULCAST_(1) << 10)
 #define MIPS_CONF3_ULRI		(_ULCAST_(1) << 13)
 
+#define MIPS_CONF4_MMUSIZEEXT	(_ULCAST_(255) << 0)
+#define MIPS_CONF4_MMUEXTDEF	(_ULCAST_(3) << 14)
+#define MIPS_CONF4_MMUEXTDEF_MMUSIZEEXT (_ULCAST_(1) << 14)
+
 #define MIPS_CONF7_WII		(_ULCAST_(1) << 31)
 
 #define MIPS_CONF7_RPS		(_ULCAST_(1) << 2)
@@ -579,6 +599,27 @@
 #define MIPS_FPIR_W		(_ULCAST_(1) << 20)
 #define MIPS_FPIR_L		(_ULCAST_(1) << 21)
 #define MIPS_FPIR_F64		(_ULCAST_(1) << 22)
+
+/*
+ * These defines are used on Octeon to implement fast access to the
+ * thread pointer from userspace. Octeon uses a 64bit location in
+ * CVMSEG to store the thread pointer for quick access.
+ */
+#ifdef CONFIG_FAST_ACCESS_TO_THREAD_POINTER
+#define FAST_ACCESS_THREAD_OFFSET       (CONFIG_CAVIUM_OCTEON_CVMSEG_SIZE * 128 - 8 - 32768)
+#define FAST_ACCESS_THREAD_REGISTER     (*(unsigned long *)(FAST_ACCESS_THREAD_OFFSET))
+#endif
+
+#if defined(CONFIG_CAVIUM_OCTEON_CVMSEG_SIZE)
+# if CONFIG_CAVIUM_OCTEON_CVMSEG_SIZE > 0
+/*
+ * CVMSEG starts at address -32768 and extends for
+ * CAVIUM_OCTEON_CVMSEG_SIZE 128 byte cache lines.
+ */
+#define TEMPORARY_SCRATCHPAD_FOR_KERNEL_OFFSET(i) \
+	(CONFIG_CAVIUM_OCTEON_CVMSEG_SIZE * 128 - (8 * ((i) + 2)) - 32768)
+# endif
+#endif
 
 #ifndef __ASSEMBLY__
 
@@ -813,6 +854,9 @@ do {									\
 
 #define read_c0_pagemask()	__read_32bit_c0_register($5, 0)
 #define write_c0_pagemask(val)	__write_32bit_c0_register($5, 0, val)
+
+#define read_c0_pagegrain()	__read_32bit_c0_register($5, 1)
+#define write_c0_pagegrain(val)	__write_32bit_c0_register($5, 1, val)
 
 #define read_c0_wired()		__read_32bit_c0_register($6, 0)
 #define write_c0_wired(val)	__write_32bit_c0_register($6, 0, val)

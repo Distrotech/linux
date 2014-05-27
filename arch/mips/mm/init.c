@@ -143,7 +143,7 @@ void *kmap_coherent(struct page *page, unsigned long addr)
 #if defined(CONFIG_64BIT_PHYS_ADDR) && defined(CONFIG_CPU_MIPS32)
 	entrylo = pte.pte_high;
 #else
-	entrylo = pte_val(pte) >> 6;
+	entrylo = pte_to_entrylo(pte_val(pte));
 #endif
 
 	ENTER_CRITICAL(flags);
@@ -305,9 +305,14 @@ static int __init page_is_ram(unsigned long pagenr)
 	for (i = 0; i < boot_mem_map.nr_map; i++) {
 		unsigned long addr, end;
 
-		if (boot_mem_map.map[i].type != BOOT_MEM_RAM)
+		switch (boot_mem_map.map[i].type) { 
+		case BOOT_MEM_RAM:
+		case BOOT_MEM_INIT_RAM:
+			break;
+		default:
 			/* not usable memory */
 			continue;
+		}
 
 		addr = PFN_UP(boot_mem_map.map[i].addr);
 		end = PFN_DOWN(boot_mem_map.map[i].addr +
@@ -462,20 +467,16 @@ void __init_refok free_initmem(void)
 			__pa_symbol(&__init_end));
 }
 
+#ifndef CONFIG_MIPS_PGD_C0_CONTEXT
 unsigned long pgd_current[NR_CPUS];
-/*
- * On 64-bit we've got three-level pagetables with a slightly
- * different layout ...
- */
-#define __page_aligned(order) __attribute__((__aligned__(PAGE_SIZE<<order)))
+#endif
 
 /*
- * gcc 3.3 and older have trouble determining that PTRS_PER_PGD and PGD_ORDER
- * are constants.  So we use the variants from asm-offset.h until that gcc
- * will officially be retired.
+ * We align swapper_pg_dir on a 64K boundry, to allow us to load its
+ * address in a single instruction in the TLB refill handler.
  */
-pgd_t swapper_pg_dir[_PTRS_PER_PGD] __page_aligned(_PGD_ORDER);
-#ifdef CONFIG_64BIT
-pmd_t invalid_pmd_table[PTRS_PER_PMD] __page_aligned(PMD_ORDER);
+pgd_t swapper_pg_dir[_PTRS_PER_PGD] __aligned(0x10000) __attribute__((__section__(".bss.superpage_aligned")));
+#ifndef __PAGETABLE_PMD_FOLDED
+pmd_t invalid_pmd_table[PTRS_PER_PMD] __aligned(PAGE_SIZE) __attribute__((__section__(".bss.page_aligned")));
 #endif
-pte_t invalid_pte_table[PTRS_PER_PTE] __page_aligned(PTE_ORDER);
+pte_t invalid_pte_table[PTRS_PER_PTE]  __aligned(PAGE_SIZE) __attribute__((__section__(".bss.page_aligned")));

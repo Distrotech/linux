@@ -190,6 +190,9 @@ NESTED(handle_int, PT_SIZE, sp)
 	and	k0, ST0_IE
 	bnez	k0, 1f
 
+#ifdef CONFIG_FAST_ACCESS_TO_THREAD_POINTER
+	LONG_L	k0, FAST_ACCESS_THREAD_OFFSET($0)
+#endif
 	eret
 #endif
 1:
@@ -365,10 +368,7 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	SAVE_ALL
  	move	a0, sp
 	jal	nmi_exception_handler
-	RESTORE_ALL
-	.set	mips3
-	eret
-	.set	pop
+	RESTORE_ALL_AND_RET
 	END(nmi_handler)
 
 	.macro	__build_clear_none
@@ -532,6 +532,9 @@ NESTED(nmi_handler, PT_SIZE, sp)
 	ori	k1, _THREAD_MASK
 	xori	k1, _THREAD_MASK
 	LONG_L	v1, TI_TP_VALUE(k1)
+#ifdef CONFIG_FAST_ACCESS_TO_THREAD_POINTER
+	move	k0, v1
+#endif
 	.set	mips3
 	eret
 	.set	mips0
