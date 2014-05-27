@@ -82,6 +82,8 @@
 #define MII_M1011_PHY_STATUS_RESOLVED	0x0800
 #define MII_M1011_PHY_STATUS_LINK	0x0400
 
+#define M1118_DEV_FLAGS_CLK_TRANSITION	0x00000001
+#define M1118_DEV_FLAGS_ALT_LED		0x00000002
 
 MODULE_DESCRIPTION("Marvell PHY driver");
 MODULE_AUTHOR("Andy Fleming");
@@ -296,6 +298,7 @@ static int m88e1118_config_aneg(struct phy_device *phydev)
 static int m88e1118_config_init(struct phy_device *phydev)
 {
 	int err;
+	u16 val;
 
 	/* Change address */
 	err = phy_write(phydev, 0x16, 0x0002);
@@ -303,17 +306,38 @@ static int m88e1118_config_init(struct phy_device *phydev)
 		return err;
 
 	/* Enable 1000 Mbit */
-	err = phy_write(phydev, 0x15, 0x1070);
+	val = 0x1040;
+	if ((phydev->dev_flags & M1118_DEV_FLAGS_CLK_TRANSITION) == 0)
+		val |= 0x30;
+
+	err = phy_write(phydev, 0x15, val);
 	if (err < 0)
 		return err;
 
+	if (phydev->dev_flags & M1118_DEV_FLAGS_ALT_LED) {
+		/* Change address */
+		err = phy_write(phydev, 0x16, 0x0003);
+		if (err < 0)
+			return err;
+
+		/* Adjust LED Drive */
+		err = phy_write(phydev, 0x11, 0x442a);
+		if (err < 0)
+			return err;
+
+		/* irq, blink-activity, blink-link */
+		val = 0x0242;
+	} else {
+		/* irq, link/activity, dual-3 */
+		val = 0x021e;
+	}
 	/* Change address */
 	err = phy_write(phydev, 0x16, 0x0003);
 	if (err < 0)
 		return err;
 
 	/* Adjust LED Control */
-	err = phy_write(phydev, 0x10, 0x021e);
+	err = phy_write(phydev, 0x10, val);
 	if (err < 0)
 		return err;
 
