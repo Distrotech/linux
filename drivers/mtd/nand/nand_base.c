@@ -2558,6 +2558,15 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
 			break;
 	}
 
+#ifdef  CONFIG_CAVIUM_OCTEON_NAND
+        /* 
+	 * For Octeon, we treat all parts as 8 bit.  Force chip options
+	 * to 8 bit when called with 8 bit busw
+	 */
+	chip->options &= ~NAND_BUSWIDTH_16;
+	busw = 0;
+#endif
+
 	/*
 	 * Check, if buswidth is correct. Hardware drivers should set
 	 * chip correct !
