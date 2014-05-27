@@ -962,7 +962,7 @@ static int acpi_idle_enter_bm(struct cpuidle_device *dev,
 	if (acpi_idle_suspend)
 		return(acpi_idle_enter_c1(dev, state));
 
-	if (acpi_idle_bm_check()) {
+	if (!cx->bm_sts_skip && acpi_idle_bm_check()) {
 		if (dev->safe_state) {
 			dev->last_state = dev->safe_state;
 			return dev->safe_state->enter(dev, dev->safe_state);
@@ -1070,6 +1070,9 @@ static int acpi_processor_setup_cpuidle(struct acpi_processor *pr)
 	if (pr->flags.power == 0) {
 		return -EINVAL;
 	}
+
+	if (!dev)
+		return -EINVAL;
 
 	dev->cpu = pr->id;
 	for (i = 0; i < CPUIDLE_STATE_MAX; i++) {

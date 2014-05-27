@@ -605,8 +605,11 @@ static __inline__ long atomic64_add_return(long i, atomic64_t * v)
 		"1:	lld	%1, %2		# atomic64_add_return	\n"
 		"	daddu	%0, %1, %3				\n"
 		"	scd	%0, %2					\n"
-		"	beqz	%0, 1b					\n"
+		"	beqz	%0, 2f					\n"
 		"	daddu	%0, %1, %3				\n"
+		"	.subsection 2					\n"
+		"2:	b	1b					\n"
+		"	.previous					\n"
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)
@@ -672,8 +675,16 @@ static __inline__ long atomic64_sub_return(long i, atomic64_t * v)
 		"1:	lld	%1, %2		# atomic64_sub_return	\n"
 		"	dsubu	%0, %1, %3				\n"
 		"	scd	%0, %2					\n"
+<<<<<<< HEAD
 		"	beqz	%0, 1b					\n"
 		"	dsubu	%0, %1, %3				\n"
+=======
+		"	beqz	%0, 2f					\n"
+		"	dsubu	%0, %1, %3				\n"
+		"	.subsection 2					\n"
+		"2:	b	1b					\n"
+		"	.previous					\n"
+>>>>>>> v2.6.32.62
 		"	.set	mips0					\n"
 		: "=&r" (result), "=&r" (temp), "=m" (v->counter)
 		: "Ir" (i), "m" (v->counter)

@@ -1172,9 +1172,9 @@ static void __cpuinit build_r4000_tlb_refill_handler(void)
 		}
 
 #ifdef CONFIG_64BIT
-		build_get_pmde64(&p, &l, &r, K0, K1); /* get pmd in K1 */
+	build_get_pmde64(&p, &l, &r, K0, K1); /* get pmd in K1 */
 #else
-		build_get_pgde32(&p, K0, K1); /* get pgd in K1 */
+	build_get_pgde32(&p, K0, K1); /* get pgd in K1 */
 #endif
 
 #ifdef CONFIG_HUGETLB_PAGE
