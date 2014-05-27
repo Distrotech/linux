@@ -4288,8 +4288,15 @@ static __devinit struct net_device *sky2_init_netdev(struct sky2_hw *hw,
 
 	/* Auto speed and flow control */
 	sky2->flags = SKY2_FLAG_AUTO_SPEED | SKY2_FLAG_AUTO_PAUSE;
+#ifndef CONFIG_CPU_CAVIUM_OCTEON
+	/*
+	 * The PCIe network card I'm using for testing happens to not support
+	 * rx csum correctly. I'm turning it off for all Octeons, but it 
+	 * really is a PCIe card problem 
+	 */
 	if (hw->chip_id != CHIP_ID_YUKON_XL)
 		sky2->flags |= SKY2_FLAG_RX_CHECKSUM;
+#endif
 
 	sky2->flow_mode = FC_BOTH;
 
