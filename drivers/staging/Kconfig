@@ -101,8 +101,6 @@ source "drivers/staging/line6/Kconfig"
 
 source "drivers/gpu/drm/radeon/Kconfig"
 
-source "drivers/staging/octeon/Kconfig"
-
 source "drivers/staging/serqt_usb2/Kconfig"
 
 source "drivers/staging/quatech_usb2/Kconfig"
