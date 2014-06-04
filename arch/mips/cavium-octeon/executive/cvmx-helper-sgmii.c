@@ -49,7 +49,7 @@
  * Functions for SGMII initialization, configuration,
  * and monitoring.
  *
- * <hr>$Revision: 52004 $<hr>
+ * <hr>$Revision: 65432 $<hr>
  */
 #ifdef CVMX_BUILD_FOR_LINUX_KERNEL
 #include <asm/octeon/cvmx.h>
@@ -152,6 +152,16 @@ static int __cvmx_helper_sgmii_hardware_init_one_time(int interface, int index)
     return 0;
 }
 
+static int __cvmx_helper_need_g15618(void)
+{
+    if (cvmx_sysinfo_get()->board_type == CVMX_BOARD_TYPE_SIM
+        || OCTEON_IS_MODEL(OCTEON_CN63XX_PASS1_X)
+        || OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_0)
+        || OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_1))
+        return 1;
+    else
+        return 0;
+}
 
 /**
  * @INTERNAL
@@ -173,7 +183,9 @@ static int __cvmx_helper_sgmii_hardware_init_link(int interface, int index)
             the other PCS*_MR*_CONTROL_REG bits).
         Read PCS*_MR*_CONTROL_REG[RESET] until it changes value to zero. */
     control_reg.u64 = cvmx_read_csr(CVMX_PCSX_MRX_CONTROL_REG(index, interface));
-    if (cvmx_sysinfo_get()->board_type != CVMX_BOARD_TYPE_SIM)
+
+    /* Errata G-15618 requires disabling PCS soft reset in CN63XX pass upto 2.1. */
+    if (!__cvmx_helper_need_g15618())
     {
         control_reg.s.reset = 1;
         cvmx_write_csr(CVMX_PCSX_MRX_CONTROL_REG(index, interface), control_reg.u64);
@@ -322,6 +334,26 @@ static int __cvmx_helper_sgmii_hardware_init(int interface, int num_ports)
         ciu_qlm.s.txdeemph = 0xf;
         ciu_qlm.s.txmargin = 0xd;
         cvmx_write_csr(CVMX_CIU_QLM2, ciu_qlm.u64);
+    }
+
+    /* CN63XX Pass 2.0 and 2.1 errata G-15273 requires the QLM De-emphasis be
+        programmed when using a 156.25Mhz ref clock */
+    if (OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_0) ||
+        OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_1))
+    {
+        /* Read the QLM speed pins */
+        cvmx_mio_rst_boot_t mio_rst_boot;
+        mio_rst_boot.u64 = cvmx_read_csr(CVMX_MIO_RST_BOOT);
+
+        if (mio_rst_boot.cn63xx.qlm2_spd == 4)
+        {
+            cvmx_ciu_qlm2_t ciu_qlm;
+            ciu_qlm.u64 = cvmx_read_csr(CVMX_CIU_QLM2);
+            ciu_qlm.s.txbypass = 1;
+            ciu_qlm.s.txdeemph = 0x0;
+            ciu_qlm.s.txmargin = 0xf;
+            cvmx_write_csr(CVMX_CIU_QLM2, ciu_qlm.u64);
+        }
     }
 
     __cvmx_helper_setup_gmx(interface, num_ports);
@@ -510,7 +542,23 @@ int __cvmx_helper_sgmii_link_set(int ipd_port, cvmx_helper_link_info_t link_info
 {
     int interface = cvmx_helper_get_interface_num(ipd_port);
     int index = cvmx_helper_get_interface_index_num(ipd_port);
-    __cvmx_helper_sgmii_hardware_init_link(interface, index);
+
+    if (link_info.s.link_up || !__cvmx_helper_need_g15618()) {
+        __cvmx_helper_sgmii_hardware_init_link(interface, index);
+    } else {
+        cvmx_pcsx_mrx_control_reg_t control_reg;
+        cvmx_pcsx_miscx_ctl_reg_t pcsx_miscx_ctl_reg;
+
+        control_reg.u64 = cvmx_read_csr(CVMX_PCSX_MRX_CONTROL_REG(index, interface));
+        control_reg.s.an_en = 0;
+        cvmx_write_csr(CVMX_PCSX_MRX_CONTROL_REG(index, interface), control_reg.u64);
+        cvmx_read_csr(CVMX_PCSX_MRX_CONTROL_REG(index, interface));
+        /* Use GMXENO to force the link down it will get reenabled later... */
+        pcsx_miscx_ctl_reg.s.gmxeno = 1;
+        cvmx_write_csr(CVMX_PCSX_MISCX_CTL_REG(index, interface), pcsx_miscx_ctl_reg.u64);
+        cvmx_read_csr(CVMX_PCSX_MISCX_CTL_REG(index, interface));
+        return 0;
+    }
     return __cvmx_helper_sgmii_hardware_init_link_speed(interface, index, link_info);
 }
 

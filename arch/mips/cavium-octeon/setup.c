@@ -33,6 +33,7 @@
 #include <asm/bootinfo.h>
 #include <asm/sections.h>
 #include <asm/time.h>
+#include <asm/traps.h>
 
 #include <asm/octeon/octeon.h>
 #include <asm/octeon/octeon-boot-info.h>
@@ -298,9 +299,8 @@ static irqreturn_t octeon_rml_interrupt(int cpl, void *dev_id)
 const char *octeon_board_type_string(void)
 {
 	static char name[80];
-	sprintf(name, "%s (%s)",
-		cvmx_board_type_to_string(octeon_bootinfo->board_type),
-		octeon_model_get_string(read_c0_prid()));
+	sprintf(name, "%s",
+		cvmx_board_type_to_string(octeon_bootinfo->board_type));
 	return name;
 }
 
@@ -832,6 +832,30 @@ static __init void memory_exclude_page(u64 addr, u64 *mem, u64 *size)
 	}
 }
 
+/* Add Octeon specific bus error handler, as write buffer parity errors
+** trigger bus errors.  These are fatal since the copy in the write buffer
+** is the only copy of the data. */
+int octeon_be_handler(struct pt_regs *regs, int is_fixup)
+{
+	unsigned long long dcache_err;
+	dcache_err = read_octeon_c0_dcacheerr();
+	if (dcache_err & (1ULL<<1)) 	{
+		unsigned long coreid = cvmx_get_core_num();
+
+		pr_err("Core%lu: Write buffer parity error:\n", coreid);
+		pr_err("cp0_errorepc == %lx\n", read_c0_errorepc());
+		pr_err("CacheErr (Dcache) == %llx\n",
+		       (unsigned long long)dcache_err);
+
+		write_octeon_c0_dcacheerr(dcache_err);
+		return MIPS_BE_FATAL;
+	}
+	if (is_fixup)
+		return MIPS_BE_FIXUP;
+	else
+		return MIPS_BE_FATAL;
+}
+
 void __init plat_mem_setup(void)
 {
 	uint64_t mem_alloc_size;
@@ -935,6 +959,8 @@ void __init plat_mem_setup(void)
 	if (total == 0)
 		panic("Unable to allocate memory from "
 		      "cvmx_bootmem_phy_alloc\n");
+
+	board_be_handler = octeon_be_handler;
 }
 
 
@@ -988,3 +1014,5 @@ void prom_free_prom_memory(void)
 	}
 #endif
 }
+
+

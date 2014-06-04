@@ -425,8 +425,9 @@ int __cvmx_helper_rgmii_link_set(int ipd_port, cvmx_helper_link_info_t link_info
     cvmx_write_csr(CVMX_GMXX_PRTX_CFG(index, interface), new_gmx_cfg.u64);
 
     /* Enable the lowest level RX */
-    cvmx_write_csr(CVMX_ASXX_RX_PRT_EN(interface),
-                   cvmx_read_csr(CVMX_ASXX_RX_PRT_EN(interface)) | (1<<index));
+    if (link_info.s.link_up)
+        cvmx_write_csr(CVMX_ASXX_RX_PRT_EN(interface),
+                       cvmx_read_csr(CVMX_ASXX_RX_PRT_EN(interface)) | (1<<index));
 
     /* Re-enable the TX path */
     for (i=0; i<cvmx_pko_get_num_queues(ipd_port); i++)

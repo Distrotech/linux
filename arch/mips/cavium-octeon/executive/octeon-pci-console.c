@@ -105,7 +105,7 @@ int  __cvmx_pci_console_write (int fd, char *buf, int nbytes)
 #endif
 
 
-#if !defined(CONFIG_OCTEON_U_BOOT) || (defined(CONFIG_OCTEON_U_BOOT) && defined(CFG_PCI_CONSOLE))
+#if !defined(CONFIG_OCTEON_U_BOOT) || (defined(CONFIG_OCTEON_U_BOOT) && (defined(CFG_PCI_CONSOLE) || defined(CONFIG_SYS_PCI_CONSOLE)))
 int octeon_pci_console_buffer_free_bytes(uint32_t buffer_size, uint32_t wr_idx, uint32_t rd_idx)
 {
     if (rd_idx >= buffer_size || wr_idx >= buffer_size)
@@ -283,7 +283,7 @@ int octeon_pci_console_host_read_avail(uint64_t console_desc_addr, unsigned int 
 
 /* This code is only available in a kernel or CVMX standalone. It can't be used
     from userspace */
-#if (!defined(CONFIG_OCTEON_U_BOOT) && (!defined(__linux__) || defined(__KERNEL__))) || (defined(CONFIG_OCTEON_U_BOOT) && defined(CFG_PCI_CONSOLE))
+#if (!defined(CONFIG_OCTEON_U_BOOT) && (!defined(__linux__) || defined(__KERNEL__))) || (defined(CONFIG_OCTEON_U_BOOT) && (defined(CFG_PCI_CONSOLE) || defined(CONFIG_SYS_PCI_CONSOLE)))
 
 static octeon_pci_console_t *octeon_pci_console_get_ptr(uint64_t console_desc_addr, unsigned int console_num)
 {
@@ -433,7 +433,7 @@ int octeon_pci_console_read_avail(uint64_t console_desc_addr, unsigned int conso
 
 
 /* This code can only be used in the bootloader */
-#if defined(CONFIG_OCTEON_U_BOOT) && defined(CFG_PCI_CONSOLE)
+#if defined(CONFIG_OCTEON_U_BOOT) && (defined(CFG_PCI_CONSOLE) || defined(CONFIG_SYS_PCI_CONSOLE))
 #define DDR0_TOP        0x10000000
 #define DDR2_BASE       0x20000000
 uint64_t  octeon_pci_console_init(int num_consoles, int buffer_size)

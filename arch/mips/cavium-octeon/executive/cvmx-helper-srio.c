@@ -117,6 +117,7 @@ int __cvmx_helper_srio_enable(int interface)
     int index;
     cvmx_sriomaintx_core_enables_t sriomaintx_core_enables;
     cvmx_sriox_imsg_ctrl_t sriox_imsg_ctrl;
+    cvmx_sriox_status_reg_t srio_status_reg;
     cvmx_dpi_ctl_t dpi_ctl;
 
     /* All SRIO ports have a cvmx_srio_rx_message_header_t header
@@ -197,6 +198,11 @@ int __cvmx_helper_srio_enable(int interface)
     dpi_ctl.s.clk = 1;
     dpi_ctl.s.en = 1;
     cvmx_write_csr(CVMX_DPI_CTL, dpi_ctl.u64);
+
+    /* Make sure register access is allowed */
+    srio_status_reg.u64 = cvmx_read_csr(CVMX_SRIOX_STATUS_REG(interface-4));
+    if (!srio_status_reg.s.access)
+        return 0;
 
     /* Enable RX */
     if (!cvmx_srio_config_read32(interface - 4, 0, -1, 0, 0,

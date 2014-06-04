@@ -9,7 +9,7 @@
 # Copyright (C) 2005-2009 Cavium Networks
 #
 
-obj-y := setup.o serial.o octeon-platform.o octeon-irq.o csrc-octeon.o
+obj-y := setup.o serial.o octeon-platform.o octeon-irq.o csrc-octeon.o hal.o
 obj-y += dma-octeon.o octeon_info.o
 obj-y += octeon-memcpy.o perf_counters.o
 

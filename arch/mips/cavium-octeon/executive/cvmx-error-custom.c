@@ -58,6 +58,7 @@
 #include <asm/octeon/cvmx-gmxx-defs.h>
 #include <asm/octeon/cvmx-lmcx-defs.h>
 #include <asm/octeon/cvmx-pemx-defs.h>
+#include <asm/octeon/cvmx-sriox-defs.h>
 #define PRINT_ERROR(format, ...) cvmx_safe_printf("ERROR " format, ##__VA_ARGS__)
 #else
 #include "cvmx.h"
@@ -140,7 +141,36 @@ static int __cvmx_error_handle_npei_int_sum_c1_ldwn(const struct cvmx_error_info
     return 1;
 }
 
-//#define DECODE_FAILING_ADDRESS
+#define DECODE_FAILING_ADDRESS
+//#define DECODE_FAILING_BIT
+
+#ifdef DECODE_FAILING_BIT
+#define _Db(x) (x)              /* Data Bit */
+#define _Ec(x) (0x100+x)        /* ECC Bit */
+#define _Ad(x) (0x200+x)        /* Address Bit */
+#define _Bu(x) (0x400+x)        /* Burst */
+#define _Un()  (-1)             /* Unused */
+/* Use ECC Code as index to lookup corrected bit */
+const static short lmc_syndrome_bits[256] = {
+    /*        __ 0 __  __ 1 __  __ 2 __  __ 3 __  __ 4 __  __ 5 __  __ 6 __  __ 7 __  __ 8 __  __ 9 __  __ A __  __ B __  __ C __  __ D __  __ E __  __ F __ */
+    /* 00: */ _Un(  ), _Ec( 0), _Ec( 1), _Un(  ), _Ec( 2), _Un(  ), _Un(  ), _Un(  ), _Ec( 3), _Un(  ), _Un(  ), _Db(17), _Un(  ), _Un(  ), _Db(16), _Un(  ),    
+    /* 10: */ _Ec( 4), _Un(  ), _Un(  ), _Db(18), _Un(  ), _Db(19), _Db(20), _Un(  ), _Un(  ), _Db(21), _Db(22), _Un(  ), _Db(23), _Un(  ), _Un(  ), _Un(  ),    
+    /* 20: */ _Ec( 5), _Un(  ), _Un(  ), _Db( 8), _Un(  ), _Db( 9), _Db(10), _Un(  ), _Un(  ), _Db(11), _Db(12), _Un(  ), _Db(13), _Un(  ), _Un(  ), _Un(  ),    
+    /* 30: */ _Un(  ), _Db(14), _Un(  ), _Un(  ), _Db(15), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Ad(34), _Un(  ),    
+    /* 40: */ _Ec( 6), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Ad( 7), _Ad( 8), _Un(  ), _Un(  ), _Ad( 9), _Db(33), _Un(  ), _Ad(10), _Un(  ), _Un(  ), _Db(32),    
+    /* 50: */ _Un(  ), _Ad(11), _Db(34), _Un(  ), _Db(35), _Un(  ), _Un(  ), _Db(36), _Db(37), _Un(  ), _Un(  ), _Db(38), _Un(  ), _Db(39), _Ad(12), _Un(  ),    
+    /* 60: */ _Un(  ), _Ad(13), _Db(56), _Un(  ), _Db(57), _Un(  ), _Un(  ), _Db(58), _Db(59), _Un(  ), _Un(  ), _Db(60), _Un(  ), _Db(61), _Ad(14), _Un(  ),    
+    /* 70: */ _Db(62), _Un(  ), _Un(  ), _Ad(15), _Un(  ), _Db(63), _Ad(16), _Un(  ), _Un(  ), _Ad(17), _Ad(18), _Un(  ), _Ad(19), _Un(  ), _Ad(20), _Un(  ),    
+    /* 80: */ _Ec( 7), _Un(  ), _Un(  ), _Ad(21), _Un(  ), _Ad(22), _Ad(23), _Un(  ), _Un(  ), _Ad(24), _Db(49), _Un(  ), _Ad(25), _Un(  ), _Un(  ), _Db(48),    
+    /* 90: */ _Un(  ), _Ad(26), _Db(50), _Un(  ), _Db(51), _Un(  ), _Un(  ), _Db(52), _Db(53), _Un(  ), _Un(  ), _Db(54), _Un(  ), _Db(55), _Ad(27), _Un(  ),    
+    /* A0: */ _Un(  ), _Ad(28), _Db(40), _Un(  ), _Db(41), _Un(  ), _Un(  ), _Db(42), _Db(43), _Un(  ), _Un(  ), _Db(44), _Un(  ), _Db(45), _Ad(29), _Un(  ),    
+    /* B0: */ _Db(46), _Un(  ), _Un(  ), _Ad(30), _Un(  ), _Db(47), _Ad(31), _Un(  ), _Un(  ), _Ad(32), _Ad(33), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ),    
+    /* C0: */ _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Db( 1), _Un(  ), _Un(  ), _Db( 0), _Un(  ),    
+    /* D0: */ _Un(  ), _Un(  ), _Un(  ), _Db( 2), _Un(  ), _Db( 3), _Db( 4), _Un(  ), _Un(  ), _Db( 5), _Db( 6), _Un(  ), _Db( 7), _Un(  ), _Un(  ), _Un(  ),    
+    /* E0: */ _Un(  ), _Un(  ), _Un(  ), _Db(24), _Un(  ), _Db(25), _Db(26), _Un(  ), _Un(  ), _Db(27), _Db(28), _Un(  ), _Db(29), _Un(  ), _Un(  ), _Un(  ),    
+    /* F0: */ _Un(  ), _Db(30), _Un(  ), _Un(  ), _Db(31), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  ), _Un(  )
+};
+#endif
 
 /**
  * @INTERNAL
@@ -212,9 +242,13 @@ static int __cvmx_cn6xxx_lmc_ecc_error_display(const cvmx_error_info_t *info)
                 "LMC%d ECC:\tFailing bank:   %u\n"
                 "LMC%d ECC:\tFailing row:    0x%x\n"
                 "LMC%d ECC:\tFailing column: 0x%x\n"
-                "LMC%d ECC:\tsyndrome: 0x%x\n"
+                "LMC%d ECC:\tsyndrome: 0x%x"
+#ifdef DECODE_FAILING_BIT
+                ", bit: %d"
+#endif
+                "\n"
 #ifdef DECODE_FAILING_ADDRESS
-                "Failing Address: 0x%016llx, Data: 0x%016llx\n"
+                "Failing  Address: 0x%016llx, Data: 0x%016llx\n"
 #endif
                 ,               /* Comma */
                 ddr_controller, sec_err, ded_err,
@@ -224,6 +258,10 @@ static int __cvmx_cn6xxx_lmc_ecc_error_display(const cvmx_error_info_t *info)
                 ddr_controller, fadr.cn63xx.frow,
                 ddr_controller, fadr.cn63xx.fcol,
                 ddr_controller, syndrome
+#ifdef DECODE_FAILING_BIT
+                ,               /* Comma */
+                lmc_syndrome_bits[syndrome]
+#endif
 #ifdef DECODE_FAILING_ADDRESS
                 ,               /* Comma */
                 (unsigned long long) fadr_physical, (unsigned long long) fadr_data
@@ -293,6 +331,14 @@ int __cvmx_error_custom_initialize(void)
         cvmx_error_disable(CVMX_ERROR_REGISTER_IO64, CVMX_PEMX_INT_SUM(1),
             1ull<<13);
     }
+    /* According to the workaround for errata SRIO-15282, clearing
+       SRIOx_INT_ENABLE[MAC_BUF]. */
+    if (OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_0) && OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_1))
+    {
+        cvmx_error_disable(CVMX_ERROR_REGISTER_IO64, CVMX_SRIOX_INT_ENABLE(0), 1ull<<22);
+        cvmx_error_disable(CVMX_ERROR_REGISTER_IO64, CVMX_SRIOX_INT_ENABLE(1), 1ull<<22);
+    }
+
     return 0;
 }
 

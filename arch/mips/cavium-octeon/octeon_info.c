@@ -39,12 +39,12 @@ static int octeon_info_show(struct seq_file *m, void *v)
 	seq_printf(m, "io_clock_hz:         %llu\n", octeon_get_io_clock_rate());
 	seq_printf(m, "dclock_hz:           %u\n", octeon_bootinfo->dclock_hz);
 	seq_printf(m, "board_type:          %u\n", octeon_bootinfo->board_type);
-	seq_printf(m, "board_rev_major:     %u\n",
-		   octeon_bootinfo->board_rev_major);
-	seq_printf(m, "board_rev_minor:     %u\n",
-		   octeon_bootinfo->board_rev_minor);
 	seq_printf(m, "board_serial_number: %s\n",
 		   octeon_bootinfo->board_serial_number);
+	seq_printf(m, "ubnt_r1:             %u\n",
+		   octeon_bootinfo->board_rev_major);
+	seq_printf(m, "ubnt_r2:             %u\n",
+		   octeon_bootinfo->board_rev_minor);
 	seq_printf(m, "mac_addr_base:       %02x:%02x:%02x:%02x:%02x:%02x\n",
 		   (int) octeon_bootinfo->mac_addr_base[0],
 		   (int) octeon_bootinfo->mac_addr_base[1],

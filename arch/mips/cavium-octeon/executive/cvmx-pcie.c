@@ -48,7 +48,7 @@
  *
  * Interface to PCIe as a host(RC) or target(EP)
  *
- * <hr>$Revision: 55482 $<hr>
+ * <hr>$Revision: 63416 $<hr>
  */
 #ifdef CVMX_BUILD_FOR_LINUX_KERNEL
 #include <asm/octeon/cvmx.h>
@@ -838,7 +838,7 @@ static int __cvmx_pcie_rc_initialize_link_gen2(int pcie_port)
             return -1;
         cvmx_wait(10000);
         pciercx_cfg032.u32 = cvmx_pcie_cfgx_read(pcie_port, CVMX_PCIERCX_CFG032(pcie_port));
-    } while (pciercx_cfg032.s.dlla == 0);
+    } while ((pciercx_cfg032.s.dlla == 0) || (pciercx_cfg032.s.lt == 1));
 
     /* Update the Replay Time Limit. Empirically, some PCIe devices take a
         little longer to respond than expected under load. As a workaround for
@@ -889,7 +889,6 @@ static int __cvmx_pcie_rc_initialize_gen2(int pcie_port)
     cvmx_sli_ctl_portx_t sli_ctl_portx;
     cvmx_sli_mem_access_ctl_t sli_mem_access_ctl;
     cvmx_sli_mem_access_subidx_t mem_access_subid;
-    cvmx_mio_rst_ctlx_t mio_rst_ctlx;
     cvmx_sriox_status_reg_t sriox_status_reg;
     cvmx_pemx_bar1_indexx_t bar1_index;
 
@@ -970,8 +969,7 @@ static int __cvmx_pcie_rc_initialize_gen2(int pcie_port)
     /* Check and make sure PCIe came out of reset. If it doesn't the board
         probably hasn't wired the clocks up and the interface should be
         skipped */
-    mio_rst_ctlx.u64 = cvmx_read_csr(CVMX_MIO_RST_CTLX(pcie_port));
-    if (!mio_rst_ctlx.s.rst_done)
+    if (CVMX_WAIT_FOR_FIELD64(CVMX_MIO_RST_CTLX(pcie_port), cvmx_mio_rst_ctlx_t, rst_done, ==, 1, 10000))
     {
         cvmx_dprintf("PCIe: Port %d stuck in reset, skipping.\n", pcie_port);
         return -1;
@@ -1004,7 +1002,7 @@ static int __cvmx_pcie_rc_initialize_gen2(int pcie_port)
         cvmx_pciercx_cfg031_t pciercx_cfg031;
         pciercx_cfg031.u32 = cvmx_pcie_cfgx_read(pcie_port, CVMX_PCIERCX_CFG031(pcie_port));
         pciercx_cfg031.s.mls = 1;
-        cvmx_pcie_cfgx_write(pcie_port, CVMX_PCIERCX_CFG031(pcie_port), pciercx_cfg515.u32);
+        cvmx_pcie_cfgx_write(pcie_port, CVMX_PCIERCX_CFG031(pcie_port), pciercx_cfg031.u32);
         if (__cvmx_pcie_rc_initialize_link_gen2(pcie_port))
         {
             cvmx_dprintf("PCIe: Link timeout on port %d, probably the slot is empty\n", pcie_port);

@@ -806,6 +806,9 @@ void fixup_irqs(void)
 
 	for (irq = OCTEON_IRQ_WORKQ0; irq < OCTEON_IRQ_LAST; irq++) {
 		desc = irq_to_desc(irq);
+		if (desc->status & IRQ_DISABLED)
+			continue;
+
 		switch (irq) {
 		case OCTEON_IRQ_MBOX0:
 		case OCTEON_IRQ_MBOX1:

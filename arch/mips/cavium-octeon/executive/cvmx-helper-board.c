@@ -141,6 +141,24 @@ int cvmx_helper_board_get_mii_address(int ipd_port)
                 return 9;
             else
                 return -1;
+        case CVMX_BOARD_TYPE_UBNT_E100:
+            if (ipd_port == 0) {
+                return 7;
+            } else if (ipd_port == 1) {
+                return 6;
+            } else if (ipd_port == 2) {
+                switch (cvmx_sysinfo_get()->board_rev_major) 
+                {
+                    case 1:
+                        return -1;
+                    case 2:
+                        return 5;
+                    default:
+                        return -1;
+                }
+            } else {
+                return -1;
+            }
         case CVMX_BOARD_TYPE_NAC38:
             /* Board has 8 RGMII ports PHYs are 0-7 */
             if ((ipd_port >= 0) && (ipd_port < 4))
@@ -315,6 +333,16 @@ cvmx_helper_link_info_t __cvmx_helper_board_link_get(int ipd_port)
                 return result;
             }
             /* Fall through to the generic code below */
+            break;
+        case CVMX_BOARD_TYPE_UBNT_E100:
+            if (ipd_port == 2 && cvmx_sysinfo_get()->board_rev_major == 1) {
+                /* port 2 is RGMII to switch */
+                result.s.link_up = 1;
+                result.s.full_duplex = 1;
+                result.s.speed = 1000;
+                return result;
+            }
+            /* Fall through to the generic code below */                         
             break;
         case CVMX_BOARD_TYPE_EBH5600:
         case CVMX_BOARD_TYPE_EBH5601:
@@ -712,6 +740,16 @@ int __cvmx_helper_board_interface_probe(int interface, int supported_ports)
  */
 int __cvmx_helper_board_hardware_enable(int interface)
 {
+    if (cvmx_sysinfo_get()->board_type == CVMX_BOARD_TYPE_UBNT_E100) {
+        cvmx_write_csr(CVMX_ASXX_RX_CLK_SETX(0, interface), 0);
+        cvmx_write_csr(CVMX_ASXX_TX_CLK_SETX(0, interface), 0x10);
+        cvmx_write_csr(CVMX_ASXX_RX_CLK_SETX(1, interface), 0);
+        cvmx_write_csr(CVMX_ASXX_TX_CLK_SETX(1, interface), 0x10);
+        cvmx_write_csr(CVMX_ASXX_RX_CLK_SETX(2, interface), 0);
+        cvmx_write_csr(CVMX_ASXX_TX_CLK_SETX(2, interface), 0x10);
+        return 0;
+    }
+
     if (cvmx_sysinfo_get()->board_type == CVMX_BOARD_TYPE_CN3005_EVB_HS5)
     {
         if (interface == 0)
@@ -784,6 +822,7 @@ cvmx_helper_board_usb_clock_types_t __cvmx_helper_board_usb_get_clock_type(void)
         case CVMX_BOARD_TYPE_LANAI2_A:
         case CVMX_BOARD_TYPE_LANAI2_U:
         case CVMX_BOARD_TYPE_LANAI2_G:
+        case CVMX_BOARD_TYPE_UBNT_E100:
             return USB_CLOCK_TYPE_CRYSTAL_12;
     }
     return USB_CLOCK_TYPE_REF_48;

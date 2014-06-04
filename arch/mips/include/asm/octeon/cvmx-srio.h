@@ -370,6 +370,15 @@ typedef union
 } cvmx_srio_tx_message_header_t;
 
 /**
+ * Reset SRIO to link partner
+ *
+ * @param srio_port  SRIO port to initialize
+ *
+ * @return Zero on success
+ */
+int cvmx_srio_link_rst(int srio_port);
+
+/**
  * Initialize a SRIO port for use.
  *
  * @param srio_port SRIO port to initialize
@@ -517,6 +526,24 @@ uint64_t cvmx_srio_physical_map(int srio_port, cvmx_srio_write_mode_t write_op,
  * @return Zero on success, negative on failure.
  */
 int cvmx_srio_physical_unmap(uint64_t physical_address, uint64_t size);
+
+#ifdef CVMX_ENABLE_PKO_FUNCTIONS
+/**
+ * fill out outbound message descriptor
+ *
+ * @param buf_ptr     pointer to a buffer pointer. the buffer pointer points
+ *                    to a chain of buffers that hold an outbound srio packet.
+ *                    the packet can take the format of (1) a pip/ipd inbound
+ *                    message or (2) an application-generated outbound message
+ * @param desc_ptr    pointer to an outbound message descriptor. should be null
+ *                    if *buf_ptr is in the format (1)
+ *
+ * @return           0 on success; negative of failure.
+ */
+int cvmx_srio_omsg_desc (uint64_t port, cvmx_buf_ptr_t *buf_ptr,
+                         cvmx_srio_tx_message_header_t *desc_ptr);
+#endif
+
 
 #ifdef	__cplusplus
 }
