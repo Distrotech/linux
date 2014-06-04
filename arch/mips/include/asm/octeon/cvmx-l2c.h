@@ -49,7 +49,7 @@
  * Interface to the Level 2 Cache (L2C) control, measurement, and debugging
  * facilities.
  *
- * <hr>$Revision: 55343 $<hr>
+ * <hr>$Revision: 69663 $<hr>
  *
  */
 
@@ -343,6 +343,14 @@ static inline cvmx_l2c_tag_t cvmx_get_l2c_tag(uint32_t association, uint32_t ind
  */
 uint32_t cvmx_l2c_address_to_index (uint64_t addr);
 
+/**
+ * Returns the L2 tag that will be used for the given physical address
+ *
+ * @param addr   physical address
+ * @return L2 cache tag. Addreses in the LMC hole are not valid.
+ * Returns 0xFFFFFFFF if the address specified is in the LMC hole.
+ */
+uint32_t cvmx_l2c_v2_address_to_tag(uint64_t addr);
 
 /**
  * Flushes (and unlocks) the entire L2 cache.

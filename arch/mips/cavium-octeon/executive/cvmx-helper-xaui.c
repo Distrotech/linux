@@ -49,7 +49,7 @@
  * Functions for XAUI initialization, configuration,
  * and monitoring.
  *
- * <hr>$Revision: 52004 $<hr>
+ * <hr>$Revision: 58004 $<hr>
  */
 #ifdef CVMX_BUILD_FOR_LINUX_KERNEL
 #include <asm/octeon/cvmx.h>
@@ -100,6 +100,26 @@ int __cvmx_helper_xaui_probe(int interface)
         ciu_qlm.s.txdeemph = 0x5;
         ciu_qlm.s.txmargin = 0x1a;
         cvmx_write_csr(CVMX_CIU_QLM2, ciu_qlm.u64);
+    }
+
+    /* CN63XX Pass 2.0 and 2.1 errata G-15273 requires the QLM De-emphasis be
+        programmed when using a 156.25Mhz ref clock */
+    if (OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_0) ||
+        OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_1))
+    {
+        /* Read the QLM speed pins */
+        cvmx_mio_rst_boot_t mio_rst_boot;
+        mio_rst_boot.u64 = cvmx_read_csr(CVMX_MIO_RST_BOOT);
+
+        if (mio_rst_boot.cn63xx.qlm2_spd == 0xb)
+        {
+            cvmx_ciu_qlm2_t ciu_qlm;
+            ciu_qlm.u64 = cvmx_read_csr(CVMX_CIU_QLM2);
+            ciu_qlm.s.txbypass = 1;
+            ciu_qlm.s.txdeemph = 0xa;
+            ciu_qlm.s.txmargin = 0x1f;
+            cvmx_write_csr(CVMX_CIU_QLM2, ciu_qlm.u64);
+        }
     }
 
     /* Due to errata GMX-700 on CN56XXp1.x and CN52XXp1.x, the interface
@@ -178,7 +198,12 @@ int __cvmx_helper_xaui_enable(int interface)
     /* (4)c Aply reset sequence */
     xauiCtl.u64 = cvmx_read_csr (CVMX_PCSXX_CONTROL1_REG(interface));
     xauiCtl.s.lo_pwr = 0;
-    xauiCtl.s.reset  = 1;
+
+    /* Errata G-15618 requires disabling PCS soft reset in CN63XX passes upto 2.1. */
+    if (!OCTEON_IS_MODEL(OCTEON_CN63XX_PASS1_X)
+        && !OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_0) 
+        && !OCTEON_IS_MODEL(OCTEON_CN63XX_PASS2_1))
+        xauiCtl.s.reset  = 1;
     cvmx_write_csr (CVMX_PCSXX_CONTROL1_REG(interface), xauiCtl.u64);
 
     /* Wait for PCS to come out of reset */

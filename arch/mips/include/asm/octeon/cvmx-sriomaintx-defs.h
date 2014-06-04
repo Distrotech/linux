@@ -80,10 +80,10 @@ static inline uint64_t CVMX_SRIOMAINTX_BAR1_IDXX(unsigned long offset, unsigned 
 	if (!(
 	      (OCTEON_IS_MODEL(OCTEON_CN63XX) && (((offset <= 15)) && ((block_id <= 1))))))
 		cvmx_warn("CVMX_SRIOMAINTX_BAR1_IDXX(%lu,%lu) is invalid on this chip\n", offset, block_id);
-	return CVMX_ADD_IO_SEG(0x0000000000200010ull) + (((offset) & 15) + ((block_id) & 1) * 0x0ull) * 4;
+	return 0x0000000000200010ull + (((offset) & 15) + ((block_id) & 1) * 0x0ull) * 4;
 }
 #else
-#define CVMX_SRIOMAINTX_BAR1_IDXX(offset, block_id) (CVMX_ADD_IO_SEG(0x0000000000200010ull) + (((offset) & 15) + ((block_id) & 1) * 0x0ull) * 4)
+#define CVMX_SRIOMAINTX_BAR1_IDXX(offset, block_id) (0x0000000000200010ull + (((offset) & 15) + ((block_id) & 1) * 0x0ull) * 4)
 #endif
 #if CVMX_ENABLE_CSR_ADDRESS_CHECKING
 static inline uint64_t CVMX_SRIOMAINTX_BELL_STATUS(unsigned long block_id)
@@ -487,10 +487,10 @@ static inline uint64_t CVMX_SRIOMAINTX_LANE_X_STATUS_0(unsigned long offset, uns
 	if (!(
 	      (OCTEON_IS_MODEL(OCTEON_CN63XX) && (((offset <= 3)) && ((block_id <= 1))))))
 		cvmx_warn("CVMX_SRIOMAINTX_LANE_X_STATUS_0(%lu,%lu) is invalid on this chip\n", offset, block_id);
-	return CVMX_ADD_IO_SEG(0x0000000000001010ull) + (((offset) & 3) + ((block_id) & 1) * 0x0ull) * 32;
+	return 0x0000000000001010ull + (((offset) & 3) + ((block_id) & 1) * 0x0ull) * 32;
 }
 #else
-#define CVMX_SRIOMAINTX_LANE_X_STATUS_0(offset, block_id) (CVMX_ADD_IO_SEG(0x0000000000001010ull) + (((offset) & 3) + ((block_id) & 1) * 0x0ull) * 32)
+#define CVMX_SRIOMAINTX_LANE_X_STATUS_0(offset, block_id) (0x0000000000001010ull + (((offset) & 3) + ((block_id) & 1) * 0x0ull) * 32)
 #endif
 #if CVMX_ENABLE_CSR_ADDRESS_CHECKING
 static inline uint64_t CVMX_SRIOMAINTX_LCS_BA0(unsigned long block_id)

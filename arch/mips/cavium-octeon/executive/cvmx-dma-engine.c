@@ -49,7 +49,7 @@
  * Interface to the PCI / PCIe DMA engines. These are only avialable
  * on chips with PCI / PCIe.
  *
- * <hr>$Revision: 55342 $<hr>
+ * <hr>$Revision: 59563 $<hr>
  */
 #ifdef CVMX_BUILD_FOR_LINUX_KERNEL
 #include <linux/module.h>
@@ -211,7 +211,9 @@ int cvmx_dma_engine_initialize(void)
 
     return 0;
 }
-
+#ifdef CVMX_BUILD_FOR_LINUX_KERNEL
+EXPORT_SYMBOL(cvmx_dma_engine_initialize);
+#endif
 
 /**
  * Shutdown all DMA engines. The engeines must be idle when this
@@ -284,7 +286,9 @@ int cvmx_dma_engine_shutdown(void)
 
     return 0;
 }
-
+#ifdef CVMX_BUILD_FOR_LINUX_KERNEL
+EXPORT_SYMBOL(cvmx_dma_engine_shutdown);
+#endif
 
 /**
  * Submit a series of DMA comamnd to the DMA engines.
@@ -533,5 +537,7 @@ int cvmx_dma_engine_transfer(int engine, cvmx_dma_engine_header_t header,
     }
     return cvmx_dma_engine_submit(engine, header, words, buffers);
 }
-
+#ifdef CVMX_BUILD_FOR_LINUX_KERNEL
+EXPORT_SYMBOL(cvmx_dma_engine_transfer);
+#endif
 #endif

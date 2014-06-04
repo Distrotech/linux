@@ -48,7 +48,7 @@
  *
  * Helper functions for common, but complicated tasks.
  *
- * <hr>$Revision: 55342 $<hr>
+ * <hr>$Revision: 58319 $<hr>
  */
 #ifdef CVMX_BUILD_FOR_LINUX_KERNEL
 #include <linux/module.h>
@@ -191,9 +191,14 @@ cvmx_helper_interface_mode_t cvmx_helper_interface_get_mode(int interface)
             return CVMX_HELPER_INTERFACE_MODE_DISABLED;
     }
 
-    if (OCTEON_IS_MODEL(OCTEON_CN6XXX) && (interface == 4 || interface == 5))
+    /* Only present in CN63XX Octeon model */
+    if (interface == 4 || interface == 5)
     {
         cvmx_sriox_status_reg_t sriox_status_reg;
+
+        if (!OCTEON_IS_MODEL(OCTEON_CN6XXX))
+            return CVMX_HELPER_INTERFACE_MODE_DISABLED; 
+
         sriox_status_reg.u64 = cvmx_read_csr(CVMX_SRIOX_STATUS_REG(interface-4));
         if (sriox_status_reg.s.srio)
             return CVMX_HELPER_INTERFACE_MODE_SRIO;

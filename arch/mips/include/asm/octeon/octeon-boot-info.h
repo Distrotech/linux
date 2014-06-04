@@ -1,5 +1,5 @@
 /***********************license start***************
- * Copyright (c) 2003-2010  Cavium Networks (support@cavium.com). All rights
+ * Copyright (c) 2003-2011  Cavium Networks (support@cavium.com). All rights
  * reserved.
  *
  *
@@ -89,6 +89,64 @@ typedef struct
     uint32_t pad;
 } boot_init_vector_t;
 
+#if defined(__ASM_GBL_DATA_H)  /* defined above */
+/*
+ * Definition of a data structure to mimic the old u-boot gd_t data structure.
+ */
+struct linux_app_global_data {
+    bd_t		*bd;
+    unsigned long	flags;
+    unsigned long	baudrate;
+    unsigned long	have_console;	/* serial_init() was called */
+    uint64_t		ram_size;	/* RAM size */
+    uint64_t		reloc_off;	/* Relocation Offset */
+    unsigned long	env_addr;	/* Address  of Environment struct */
+    unsigned long	env_valid;	/* Checksum of Environment valid? */
+    unsigned long	cpu_clock_mhz;	/* CPU clock speed in MHz */
+    unsigned long	ddr_clock_mhz;	/* DDR clock (not data rate!) in MHz */
+    unsigned long	ddr_ref_hertz;	/* DDR Ref clock Hertz */
+    int			mcu_rev_maj;
+    int			mcu_rev_min;
+    int			console_uart;
+
+    /* EEPROM data structures as read from EEPROM or populated by other
+     * means on boards without an EEPROM
+     */
+    octeon_eeprom_board_desc_t	board_desc;
+    octeon_eeprom_clock_desc_t	clock_desc;
+    octeon_eeprom_mac_addr_t	mac_desc;
+
+    void		**jt;		/* jump table, not used */
+    char		*err_msg;	/* pointer to error message to save
+					 * until console is up.  Not used.
+					 */
+    unsigned long	uboot_flash_address;	/* Address of normal bootloader
+						 * in flash
+						 */
+    unsigned long	uboot_flash_size;	/* Size of normal bootloader */
+    uint64_t		dfm_ram_size;		/* DFM RAM size */
+};
+typedef struct linux_app_global_data linux_app_global_data_t;
+
+/* Flags for linux_app_global_data */
+#define LA_GD_FLG_RELOC			0x0001	/* Code was relocated to RAM	 */
+#define LA_GD_FLG_DEVINIT		0x0002	/* Devices have been initialized */
+#define LA_GD_FLG_SILENT		0x0004	/* Silent mode			 */
+#define LA_GD_FLG_CLOCK_DESC_MISSING	0x0008
+#define LA_GD_FLG_BOARD_DESC_MISSING	0x0010
+#define LA_GD_FLG_DDR_VERBOSE		0x0020
+#define LA_GD_FLG_DDR0_CLK_INITIALIZED	0x0040
+#define LA_GD_FLG_DDR1_CLK_INITIALIZED	0x0080
+#define LA_GD_FLG_DDR2_CLK_INITIALIZED	0x0100
+#define LA_GD_FLG_RAM_RESIDENT		0x0200	/* RAM boot detected */
+#define LA_GD_FLG_FAILSAFE_MODE		0x0400	/* Use failsafe mode */
+#define LA_GD_FLG_DDR_TRACE_INIT	0x0800
+#define LA_GD_FLG_DFM_CLK_INITIALIZED	0x1000
+#define LA_GD_FLG_DFM_VERBOSE		0x2000
+#define LA_GD_FLG_DFM_TRACE_INIT	0x4000
+#define LA_GD_FLG_MEMORY_PRESERVED	0x8000
+#endif /* __ASM_GBL_DATA_H */
+
 /*
  * Definition of a data structure setup by the bootloader to enable Linux to
  * launch SE apps on idle cores.
@@ -108,10 +166,8 @@ struct linux_app_boot_info
     uint32_t compact_flash_common_base_addr;
     uint32_t compact_flash_attribute_base_addr;
     uint32_t led_display_base_addr;
-#ifndef __OCTEON_NEWLIB__
-#if defined(__U_BOOT__) || !defined(__KERNEL__)
-    gd_t gd;
-#endif
+#if defined(__ASM_GBL_DATA_H)  /* defined above */
+    linux_app_global_data_t gd;
 #endif
 };
 typedef struct linux_app_boot_info linux_app_boot_info_t;

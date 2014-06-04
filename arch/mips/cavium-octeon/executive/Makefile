@@ -16,7 +16,7 @@ obj-y += cvmx-pko.o cvmx-spi.o cvmx-cmd-queue.o \
 	cvmx-helper-rgmii.o cvmx-helper-sgmii.o cvmx-helper-npi.o \
 	cvmx-helper-loop.o cvmx-helper-spi.o cvmx-helper-util.o \
 	cvmx-helper-srio.o cvmx-spi4000.o cvmx-clock.o cvmx-twsi.o \
-	cvmx-srio.o cvmx-csr-db.o cvmx-csr-db-support.o cvmx-dma-engine.o
+	cvmx-srio.o cvmx-csr-db.o cvmx-csr-db-support.o cvmx-dma-engine.o cvmx-raid.o
 
 obj-$(CONFIG_CAVIUM_DECODE_RSL) += cvmx-error.o cvmx-error-custom.o cvmx-error-init-cn30xx.o \
 	cvmx-error-init-cn31xx.o cvmx-error-init-cn38xx.o \
@@ -33,16 +33,6 @@ obj-$(CONFIG_CAVIUM_GDB) += cvmx-debug.o cvmx-debug-handler.o \
 
 obj-$(CONFIG_CAVIUM_OCTEON_TRA)       += cvmx-tra.o
 obj-$(CONFIG_CAVIUM_OCTEON_NAND)      += cvmx-nand.o
-obj-$(CONFIG_USB)      		      += cvmx-usbd.o cvmx-usb.o 
-
-ifdef CONFIG_CAVIUM_DECODE_RSL
-need-cvmx-srio = 1
-endif
-ifdef CONFIG_RAPIDIO
-need-cvmx-srio = 1
-endif
-ifeq ($(need-cvmx-srio), 1)
-obj-y			+= cvmx-srio.o
-endif
+obj-$(CONFIG_USB)      		      += cvmx-usbd.o cvmx-usb.o
 
 obj-y += octeon-pci-console.o

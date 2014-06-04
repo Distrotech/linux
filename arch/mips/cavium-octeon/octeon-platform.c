@@ -166,6 +166,9 @@ static struct i2c_board_info __initdata octeon_i2c_devices[] = {
 	{
 		I2C_BOARD_INFO("ds1337", 0x68),
 	},
+	{
+		I2C_BOARD_INFO("tmp421", 0x4c),
+	},
 };
 
 static int __init octeon_i2c_devices_init(void)

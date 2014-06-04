@@ -56,7 +56,11 @@
 #include "cvmx-asm.h"
 
 #ifndef __OCTEON_NEWLIB__
+#ifdef CONFIG_OCTEON_U_BOOT_NEW
+#include <asm/arch/octeon_mem_map.h>
+#else
 #include "../../bootloader/u-boot/include/octeon_mem_map.h"
+#endif
 #else
 #include "octeon-boot-info.h"
 #endif
@@ -241,6 +245,8 @@ noexc:
 #else
 	ld	sp,0(sp)
 #endif
+	mflo	$4
+	mfhi	$5
 	jal	__cvmx_debug_handler_stage3
 	nop
 

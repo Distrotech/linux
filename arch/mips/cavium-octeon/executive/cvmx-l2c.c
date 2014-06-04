@@ -49,7 +49,7 @@
  * Implementation of the Level 2 Cache (L2C) control,
  * measurement, and debugging facilities.
  *
- * <hr>$Revision: 55342 $<hr>
+ * <hr>$Revision: 69663 $<hr>
  *
  */
 #ifdef CVMX_BUILD_FOR_LINUX_KERNEL
@@ -348,38 +348,49 @@ int cvmx_l2c_lock_line(uint64_t addr)
     {
         int shift = CVMX_L2C_TAG_ADDR_ALIAS_SHIFT;
         uint64_t assoc = cvmx_l2c_get_num_assoc();
-        uint64_t tag = addr >> shift;
-        uint64_t index = CVMX_ADD_SEG(CVMX_MIPS_SPACE_XKPHYS, cvmx_l2c_address_to_index(addr) << CVMX_L2C_IDX_ADDR_SHIFT);
+        uint32_t tag = cvmx_l2c_v2_address_to_tag(addr);
+        uint64_t indext =  cvmx_l2c_address_to_index(addr) << CVMX_L2C_IDX_ADDR_SHIFT;
+        uint64_t index = CVMX_ADD_SEG(CVMX_MIPS_SPACE_XKPHYS, indext);
         uint64_t way;
         cvmx_l2c_tadx_tag_t l2c_tadx_tag;
 
-        CVMX_CACHE_LCKL2(CVMX_ADD_SEG(CVMX_MIPS_SPACE_XKPHYS, addr), 0);
+        if (tag == 0xFFFFFFFF) {
+            cvmx_dprintf("ERROR: cvmx_l2c_lock_line: addr 0x%llx in LMC hole."
+                         "\n", (unsigned long long) addr); 
+            return 1;
+        }
 
+        /* cvmx_dprintf("shift=%d index=%lx tag=%x\n",shift, index, tag); */
+        CVMX_CACHE_LCKL2(CVMX_ADD_SEG(CVMX_MIPS_SPACE_XKPHYS, addr), 0);
+        CVMX_SYNCW;
         /* Make sure we were able to lock the line */
         for (way = 0; way < assoc; way++)
         {
-            CVMX_CACHE_LTGL2I(index | (way << shift), 0);
+            uint64_t caddr = index | (way << shift);
+            CVMX_CACHE_LTGL2I(caddr, 0);
             CVMX_SYNC;   // make sure CVMX_L2C_TADX_TAG is updated
             l2c_tadx_tag.u64 = cvmx_read_csr(CVMX_L2C_TADX_TAG(0));
             if (l2c_tadx_tag.s.valid && l2c_tadx_tag.s.tag == tag)
                 break;
+            /* cvmx_printf("caddr=%lx tad=%d tagu64=%lx valid=%x tag=%x \n", caddr,
+               tad, l2c_tadx_tag.u64, l2c_tadx_tag.s.valid, l2c_tadx_tag.s.tag); */
         }
 
         /* Check if a valid line is found */
-        if (way >= assoc)
-        {
-            //cvmx_dprintf("ERROR: cvmx_l2c_lock_line: line not found for locking at 0x%llx address\n", (unsigned long long)addr);
-            return -1;
+        if (way >= assoc) {
+            /*cvmx_dprintf("ERROR: cvmx_l2c_lock_line: line not found for locking at"
+                         " 0x%llx address\n", (unsigned long long)addr);*/
+            return 1;
         }
 
         /* Check if lock bit is not set */
-        if (!l2c_tadx_tag.s.lock)
-        {
-            //cvmx_dprintf("ERROR: cvmx_l2c_lock_line: Not able to lock at 0x%llx address\n", (unsigned long long)addr);
-            return -1;
+        if (!l2c_tadx_tag.s.lock) {
+            /*cvmx_dprintf("ERROR: cvmx_l2c_lock_line: Not able to lock at "
+               "0x%llx address\n", (unsigned long long)addr);*/
+            return 1;
         }
 
-        return way;
+        return 0;
     }
     else
     {
@@ -778,7 +789,19 @@ cvmx_l2c_tag_t cvmx_l2c_get_tag(uint32_t association, uint32_t index)
 
 #endif
 
-uint32_t cvmx_l2c_address_to_index (uint64_t addr)
+uint32_t cvmx_l2c_v2_address_to_tag(uint64_t addr)
+{
+#define DR0_END   ( (256 * 1024 * 1024) -1)
+#define DR1_START (512 * 1024 * 1024)
+#define L2_HOLE   (256 * 1024 * 1024)
+
+    if ( (addr > DR0_END) && (addr < DR1_START) ) return (uint32_t) (-1);
+    if (addr > DR1_START) addr = addr - L2_HOLE ;
+    addr = addr & 0x7FFFFFFFFULL;
+    return (uint32_t )(addr >> CVMX_L2C_TAG_ADDR_ALIAS_SHIFT);
+}
+
+uint32_t cvmx_l2c_address_to_index(uint64_t addr)
 {
     uint64_t idx = addr >> CVMX_L2C_IDX_ADDR_SHIFT;
     int indxalias = 0;

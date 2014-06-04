@@ -64,6 +64,12 @@ int cvmx_debug_uart = 1;
 
 #endif
 
+/* 
+ * NOTE: CARE SHOULD BE TAKEN USING STD C LIBRARY FUNCTIONS IN
+ * THIS FILE IF SOMEONE PUTS A BREAKPOINT ON THOSE FUNCTIONS
+ * DEBUGGING WILL FAIL.
+ */
+
 
 #ifdef __OCTEON_NEWLIB__
 #pragma weak cvmx_uart_enable_intr
@@ -134,6 +140,23 @@ static void cvmx_debug_uart_install_break_handler(void)
 #endif
 }
 
+/**
+ * Routines to handle hex data
+ *
+ * @param ch
+ * @return
+ */
+static inline int cvmx_debug_uart_hex(char ch)
+{
+    if ((ch >= 'a') && (ch <= 'f'))
+        return(ch - 'a' + 10);
+    if ((ch >= '0') && (ch <= '9'))
+        return(ch - '0');
+    if ((ch >= 'A') && (ch <= 'F'))
+        return(ch - 'A' + 10);
+    return(-1);
+}
+
 /* Get a packet from the UART, return 0 on failure and 1 on success. */
 
 static int cvmx_debug_uart_getpacket(char *buffer, size_t size)
@@ -174,20 +197,31 @@ static int cvmx_debug_uart_getpacket(char *buffer, size_t size)
 
         if (ch == '#')
         {
-	    char csumchars[2];
+	    char csumchars0, csumchars1;
 	    unsigned xmitcsum;
-	    int n;
+	    int n0, n1;
 
-            csumchars[0] = cvmx_uart_read_byte(cvmx_debug_uart);
-            csumchars[1] = cvmx_uart_read_byte(cvmx_debug_uart);
-	    n = sscanf(csumchars, "%2x", &xmitcsum);
-	    if (n != 1)
-		return 1;
+            csumchars0 = cvmx_uart_read_byte(cvmx_debug_uart);
+            csumchars1 = cvmx_uart_read_byte(cvmx_debug_uart);
+            n0 = cvmx_debug_uart_hex(csumchars0);
+            n1 = cvmx_debug_uart_hex(csumchars1);
+	    if (n0 == -1 || n1 == -1)
+		return 0;
 
+            xmitcsum = (n0 << 4) | n1;
             return checksum == xmitcsum;
         }
     }
     return 0;
+}
+
+/* Put the hex value of t into str. */
+static void cvmx_debug_uart_strhex(char *str, unsigned char t)
+{
+  char hexchar[] = "0123456789ABCDEF";
+  str[0] = hexchar[(t>>4)];
+  str[1] = hexchar[t&0xF];
+  str[2] = 0;
 }
 
 static int cvmx_debug_uart_putpacket(char *packet)
@@ -199,7 +233,7 @@ static int cvmx_debug_uart_putpacket(char *packet)
 
     for (csum = 0, i = 0; ptr[i]; i++)
       csum += ptr[i];
-    sprintf(csumstr, "%02x", csum);
+    cvmx_debug_uart_strhex(csumstr, csum);
 
     cvmx_spinlock_lock(&cvmx_debug_uart_lock);
     cvmx_uart_write_byte(cvmx_debug_uart, '$');

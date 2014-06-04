@@ -48,7 +48,7 @@
  *
  * Helper functions for common, but complicated tasks.
  *
- * <hr>$Revision: 49448 $<hr>
+ * <hr>$Revision: 63534 $<hr>
  */
 
 #ifndef __CVMX_HELPER_H__
@@ -117,7 +117,7 @@ typedef union
  * number. Users should set this pointer to a function before
  * calling any cvmx-helper operations.
  */
-extern void (*cvmx_override_pko_queue_priority)(int pko_port, uint64_t priorities[16]);
+extern CVMX_SHARED void (*cvmx_override_pko_queue_priority)(int pko_port, uint64_t priorities[16]);
 
 /**
  * cvmx_override_ipd_port_setup(int ipd_port) is a function
@@ -127,7 +127,7 @@ extern void (*cvmx_override_pko_queue_priority)(int pko_port, uint64_t prioritie
  * before IPD is enabled. Users should set this pointer to a
  * function before calling any cvmx-helper operations.
  */
-extern void (*cvmx_override_ipd_port_setup)(int ipd_port);
+extern CVMX_SHARED void (*cvmx_override_ipd_port_setup)(int ipd_port);
 
 /**
  * This function enables the IPD and also enables the packet interfaces.

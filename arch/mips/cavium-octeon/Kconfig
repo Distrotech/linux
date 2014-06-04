@@ -316,3 +316,17 @@ config DISABLE_ELF_NOTE_HEADER
 	  Some early Octeon bootloaders cannot process PT_NOTE program
 	  headers.  Select y to omit these headers so that the kernel
 	  can be loaded with older bootloaders.
+
+config CAVIUM_OCTEON_IPFWD_OFFLOAD
+	bool "Enable Cavium Octeon ip-offload module"
+	default "n"
+	help
+	  This enables Cavium Octeon ip-offload module.
+
+config CAVIUM_OCTEON_IPSEC
+	bool "Enable enhancements to the IPSec stack to allow procotol offload."
+	default "n"
+	help
+	  This enables enhancements to the IPSec stack to allow some of the
+	    processing required for IPSec to be performed on another processor
+	    which must be running the ipsec-filter application.

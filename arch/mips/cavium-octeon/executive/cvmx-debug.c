@@ -42,6 +42,9 @@
  * @file
  *
  * Interface to debug exception handler
+ * NOTE: CARE SHOULD BE TAKE WHEN USING STD C LIBRARY FUNCTIONS IN
+ * THIS FILE IF SOMEONE PUTS A BREAKPOINT ON THOSE FUNCTIONS
+ * DEBUGGING WILL FAIL.
  *
  * <hr>$Revision: 50060 $<hr>
  */
@@ -142,6 +145,57 @@ char *__cvmx_debug_stack_top_all[OCTEON_NUM_CORES];
 #endif
 
 
+static size_t cvmx_debug_strlen (const char *str)
+{
+    size_t size = 0;
+    while (*str)
+    {
+        size++;
+        str++;
+    }
+    return size;
+}
+static void cvmx_debug_strcpy (char *dest, const char *src)
+{
+    while (*src)
+    {
+        *dest = *src;
+        src++;
+        dest++;
+    }
+    *dest = 0;
+}
+
+static void cvmx_debug_memcpy_align (void *dest, const void *src, int size) __attribute__ ((__noinline__));
+static void cvmx_debug_memcpy_align (void *dest, const void *src, int size)
+{
+  long long *dest1 = (long long*)dest;
+  const long long *src1 = (const long long*)src;
+  int i;
+  if (size == 40)
+  {
+    long long a0, a1, a2, a3, a4;
+    a0 = src1[0];
+    a1 = src1[1];
+    a2 = src1[2];
+    a3 = src1[3];
+    a4 = src1[4];
+    dest1[0] = a0;
+    dest1[1] = a1;
+    dest1[2] = a2;
+    dest1[3] = a3;
+    dest1[4] = a4;
+    return;
+  }
+  for(i = 0;i < size;i+=8)
+  {
+    *dest1 = *src1;
+    dest1++;
+    src1++;
+  }
+}
+
+
 static inline uint32_t cvmx_debug_core_mask(void)
 {
 #ifndef CVMX_BUILD_FOR_LINUX_KERNEL
@@ -157,13 +211,13 @@ return octeon_get_boot_coremask ();
 
 static inline void cvmx_debug_update_state(cvmx_debug_state_t state)
 {
-    memcpy(cvmx_debug_globals->state, &state, sizeof(cvmx_debug_state_t));
+    cvmx_debug_memcpy_align(cvmx_debug_globals->state, &state, sizeof(cvmx_debug_state_t));
 }
 
 static inline cvmx_debug_state_t cvmx_debug_get_state(void)
 {
     cvmx_debug_state_t state;
-    memcpy(&state, cvmx_debug_globals->state, sizeof(cvmx_debug_state_t));
+    cvmx_debug_memcpy_align(&state, cvmx_debug_globals->state, sizeof(cvmx_debug_state_t));
     return state;
 }
 
@@ -265,7 +319,7 @@ static void cvmx_debug_globals_check_version(void)
 }
 
 static inline volatile cvmx_debug_core_context_t *cvmx_debug_core_context(void);
-static inline void cvmx_debug_save_core_context(volatile cvmx_debug_core_context_t *context);
+static inline void cvmx_debug_save_core_context(volatile cvmx_debug_core_context_t *context, uint64_t hi, uint64_t lo);
 
 void cvmx_debug_init(void)
 {
@@ -367,27 +421,34 @@ void cvmx_debug_init(void)
     }
 }
 
-static int cvmx_debug_putpacket_noformat(char *packet);
-
-static __attribute__ ((format (printf, 1, 2))) int cvmx_debug_putpacket(char *format, ...)
+static const char cvmx_debug_hexchar[] = "0123456789ABCDEF";
+/* Put the hex value of t into str. */
+static void cvmx_debug_int8_to_strhex(char *str, unsigned char t)
 {
-    va_list ap;
-    size_t n;
-    char packet[CVMX_DEBUG_MAX_RESPONSE_SIZE];
+  str[0] = cvmx_debug_hexchar[(t>>4)&0xf];
+  str[1] = cvmx_debug_hexchar[t&0xF];
+  str[2] = 0;
+}
 
-    if (cvmx_debug_comms[cvmx_debug_globals->comm_type]->putpacket == NULL)
-        return 0;
-
-    va_start(ap, format);
-    n = vsnprintf(packet, sizeof(packet), format, ap);
-    va_end(ap);
-
-    if (n >= sizeof(packet))
-    {
-        cvmx_debug_printf("packet truncated (needed %d bytes): %s\n", (int)n, packet);
-        return 0;
-    }
-    return cvmx_debug_putpacket_noformat(packet);
+static void cvmx_debug_int64_to_strhex(char *str, uint64_t t)
+{
+  str[0] = cvmx_debug_hexchar[(t>>60)&0xF];
+  str[1] = cvmx_debug_hexchar[(t>>56)&0xF];
+  str[2] = cvmx_debug_hexchar[(t>>52)&0xF];
+  str[3] = cvmx_debug_hexchar[(t>>48)&0xF];
+  str[4] = cvmx_debug_hexchar[(t>>44)&0xF];
+  str[5] = cvmx_debug_hexchar[(t>>40)&0xF];
+  str[6] = cvmx_debug_hexchar[(t>>36)&0xF];
+  str[7] = cvmx_debug_hexchar[(t>>32)&0xF];
+  str[8] = cvmx_debug_hexchar[(t>>28)&0xF];
+  str[9] = cvmx_debug_hexchar[(t>>24)&0xF];
+  str[10] = cvmx_debug_hexchar[(t>>20)&0xF];
+  str[11] = cvmx_debug_hexchar[(t>>16)&0xF];
+  str[12] = cvmx_debug_hexchar[(t>>12)&0xF];
+  str[13] = cvmx_debug_hexchar[(t>>8)&0xF];
+  str[14] = cvmx_debug_hexchar[(t>>4)&0xF];
+  str[15] = cvmx_debug_hexchar[(t>>0)&0xF];
+  str[16] = 0;
 }
 
 static int cvmx_debug_putpacket_noformat(char *packet)
@@ -396,6 +457,47 @@ static int cvmx_debug_putpacket_noformat(char *packet)
         return 0;
     cvmx_debug_printf("Reply: %s\n", packet);
     return cvmx_debug_comms[cvmx_debug_globals->comm_type]->putpacket(packet);
+}
+
+static int cvmx_debug_putcorepacket(char *buf, int core)
+{
+     char *tmp = "!Core XX ";
+     int tmpsize = cvmx_debug_strlen(tmp);
+     int bufsize = cvmx_debug_strlen(buf);
+     char *packet = __builtin_alloca(tmpsize + bufsize + 1);
+     cvmx_debug_strcpy(packet, buf);
+     cvmx_debug_strcpy(&packet[tmpsize], buf);
+     if (core < 10)
+     {
+         packet[6] = ' ';
+         packet[7] = core + '0';
+     }
+     else if (core < 20)
+     {
+         packet[6] = '1';
+         packet[7] = core - 10 + '0';
+     }
+     else if (core < 30)
+     {
+         packet[6] = '2';
+         packet[7] = core - 20 + '0';
+     }
+     else
+     {
+         packet[6] = '3';
+         packet[7] = core - 30 + '0';
+     }
+     return cvmx_debug_putpacket_noformat(packet);
+}
+
+/* Put a buf followed by an integer formated as a hex.  */
+static int cvmx_debug_putpacket_hexint(char *buf, uint64_t value)
+{
+    size_t size = cvmx_debug_strlen(buf);
+    char *packet = __builtin_alloca(size + 16 + 1);
+    cvmx_debug_strcpy(packet, buf);
+    cvmx_debug_int64_to_strhex(&packet[size], value);
+    return cvmx_debug_putpacket_noformat(packet);
 }
 
 static int cvmx_debug_active_core(cvmx_debug_state_t state, int core)
@@ -470,22 +572,59 @@ static int cvmx_debug_probe_store(unsigned char *ptr)
     return ok;
 }
 
-/* Put the hex value of t into str. */
-static void strhex(char *str, unsigned char t)
+
+/**
+ * Routines to handle hex data
+ *
+ * @param ch
+ * @return
+ */
+static inline int cvmx_debug_hex(char ch)
 {
-  char a[] = "0123456789ABCDEF";
-  str[0] = a[(t>>4)];
-  str[1] = a[t&0xF];
-  str[2] = 0;
+    if ((ch >= 'a') && (ch <= 'f'))
+        return(ch - 'a' + 10);
+    if ((ch >= '0') && (ch <= '9'))
+        return(ch - '0');
+    if ((ch >= 'A') && (ch <= 'F'))
+        return(ch - 'A' + 10);
+    return(-1);
+}
+
+/**
+ * While we find nice hex chars, build an int.
+ * Return number of chars processed.
+ *
+ * @param ptr
+ * @param intValue
+ * @return
+ */
+static int cvmx_debug_hexToLong(const char **ptr, uint64_t *intValue)
+{
+    int numChars = 0;
+    long hexValue;
+
+    *intValue = 0;
+    while (**ptr)
+    {
+        hexValue = cvmx_debug_hex(**ptr);
+        if (hexValue < 0)
+            break;
+
+        *intValue = (*intValue << 4) | hexValue;
+        numChars ++;
+
+        (*ptr)++;
+    }
+
+    return(numChars);
 }
 
 /**
   * Initialize the performance counter control registers.
   *
   */
-static void cvmx_debug_set_perf_control_reg (int perf_event, int perf_counter)
+static void cvmx_debug_set_perf_control_reg (volatile cvmx_debug_core_context_t *context, int perf_event, int perf_counter)
 {
-    volatile cvmx_debug_core_context_t *context = cvmx_debug_core_context();
     cvmx_core_perf_control_t control;
 
     control.u32 = 0;
@@ -500,7 +639,7 @@ static void cvmx_debug_set_perf_control_reg (int perf_event, int perf_counter)
     context->cop0.perfctrl[perf_counter] = control.u32;
 }
 
-static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
+static cvmx_debug_command_t cvmx_debug_process_packet(const char *packet)
 {
     const char *buf = packet;
     cvmx_debug_command_t result = COMMAND_NOP;
@@ -519,18 +658,20 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
 
         case 'F':   /* Change the focus core */
         {
-            int core;
-            sscanf(buf, "%x", &core);
-
+            uint64_t core;
+            if (!cvmx_debug_hexToLong(&buf, &core))
+            {
+                cvmx_debug_putpacket_noformat("!Uknown core.  Focus not changed.");
+            }
             /* Only cores in the exception handler may become the focus.
-            If a core not in the exception handler got focus the
-            debugger would hang since nobody would talk to it.  */
-            if (state.handler_cores & (1 << core))
+               If a core not in the exception handler got focus the
+               debugger would hang since nobody would talk to it.  */
+            else if (state.handler_cores & (1 << core))
             {
                 /* Focus change reply must be sent before the focus
-                changes. Otherwise the new focus core will eat our ACK
-                from the debugger.  */
-                cvmx_debug_putpacket("F%02x", core);
+                   changes. Otherwise the new focus core will eat our ACK
+                   from the debugger.  */
+                cvmx_debug_putpacket_hexint("F", core);
                 cvmx_debug_comms[cvmx_debug_globals->comm_type]->change_core(state.focus_core, core);
                 state.focus_core = core;
                 cvmx_debug_update_state(state);
@@ -542,7 +683,7 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
         }
         /* fall through */
         case 'f':   /* Get the focus core */
-            cvmx_debug_putpacket("F%02x", (unsigned)state.focus_core);
+            cvmx_debug_putpacket_hexint("F", state.focus_core);
             break;
 
         case 'J': /* Set the flag for skip-over-isr in Single-Stepping mode */
@@ -557,14 +698,15 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
            same as the get step-isr command */
 
         case 'j':   /* Reply with step_isr status  */
-            cvmx_debug_putpacket("J%x", (unsigned)state.step_isr);
+            cvmx_debug_putpacket_hexint("J", (unsigned)state.step_isr);
             break;
 
 
         case 'I':   /* Set the active cores */
         {
-            long long active_cores;
-            sscanf(buf, "%llx", &active_cores);
+            uint64_t active_cores;
+            if (!cvmx_debug_hexToLong(&buf, &active_cores))
+                active_cores = 0;
             /* Limit the active mask to the known to exist cores */
             state.active_cores = active_cores & state.known_cores;
 
@@ -585,7 +727,7 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
            same as the get active cores command */
 
         case 'i':   /* Get the active cores */
-            cvmx_debug_putpacket("I%llx", (long long) state.active_cores);
+            cvmx_debug_putpacket_hexint("I", state.active_cores);
             break;
 
         case 'A':   /* Setting the step mode all or one */
@@ -600,34 +742,46 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
            same as the get step-all command */
 
         case 'a':   /* Getting the current step mode */
-            cvmx_debug_putpacket("A%x", (unsigned)state.step_all);
+            cvmx_debug_putpacket_hexint("A", state.step_all);
             break;
 
         case 'g':   /* read a register from global place. */
         {
             volatile cvmx_debug_core_context_t *context = cvmx_debug_core_context();
-            int regno;
+            uint64_t regno;
             volatile uint64_t *reg;
 
             /* Get the register number to read */
-            sscanf(buf, "%x", &regno);
+            if (!cvmx_debug_hexToLong(&buf, &regno))
+            {
+                cvmx_debug_printf("Register number cannot be read.\n");
+                cvmx_debug_putpacket_hexint("", 0xDEADBEEF);
+                break;
+            }
 
             reg = cvmx_debug_regnum_to_context_ref(regno, context);
             if (!reg)
-                cvmx_debug_printf("Register #%d is not valid\n", regno);
-            cvmx_debug_putpacket("%llx", (unsigned long long) *reg);
+            {
+                cvmx_debug_printf("Register #%d is not valid\n", (int)regno);
+                cvmx_debug_putpacket_hexint("", 0xDEADBEEF);
+                break;
+            }
+            cvmx_debug_putpacket_hexint("", *reg);
         }
         break;
 
         case 'G':   /* set the value of a register. */
         {
             volatile cvmx_debug_core_context_t *context = cvmx_debug_core_context();
-            int regno;
+            uint64_t regno;
             volatile uint64_t *reg;
-            long long value;
+            uint64_t value;
 
-            /* Get the register number to read */
-            if (sscanf(buf, "%x,%llx", &regno, &value) != 2)
+            /* Get the register number to write. It should be followed by
+               a comma */
+            if (!cvmx_debug_hexToLong(&buf, &regno)
+                || (*buf++ != ',')
+                || !cvmx_debug_hexToLong(&buf, &value))
             {
                 cvmx_debug_printf("G packet corrupt: %s\n", buf);
                 goto error_packet;
@@ -636,7 +790,7 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
             reg = cvmx_debug_regnum_to_context_ref(regno, context);
             if (!reg)
             {
-                cvmx_debug_printf("Register #%d is not valid\n", regno);
+                cvmx_debug_printf("Register #%d is not valid\n", (int)regno);
                 goto error_packet;
             }
             *reg = value;
@@ -645,18 +799,21 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
 
         case 'm':   /* Memory read. mAA..AA,LLLL  Read LLLL bytes at address AA..AA */
         {
-            long long addr, i, length;
+            uint64_t addr, i, length;
             unsigned char *ptr;
             char *reply;
 
-            if (sscanf(buf, "%llx,%llx", &addr, &length) != 2)
+            /* Get the memory address, a comma, and the length */
+            if (!cvmx_debug_hexToLong(&buf, &addr)
+                || (*buf++ != ',')
+                || !cvmx_debug_hexToLong(&buf, &length))
             {
                 cvmx_debug_printf("m packet corrupt: %s\n", buf);
                 goto error_packet;
             }
             if (length >= 1024)
             {
-                cvmx_debug_printf("m packet length out of range: %lld\n", length);
+                cvmx_debug_printf("m packet length out of range: %lld\n", (long long)length);
                 goto error_packet;
             }
 
@@ -668,7 +825,7 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
                 unsigned char t;
                 if (!cvmx_debug_probe_load(&ptr[i], &t))
                   goto error_packet;
-                strhex(&reply[i * 2], t);
+                cvmx_debug_int8_to_strhex(&reply[i * 2], t);
             }
             cvmx_debug_putpacket_noformat(reply);
         }
@@ -676,28 +833,31 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
 
         case 'M':   /* Memory write. MAA..AA,LLLL: Write LLLL bytes at address AA.AA return OK */
         {
-            long long addr, i, length;
+            uint64_t addr, i, length;
             unsigned char *ptr;
-            char value[1024];
 
-            if (sscanf(buf, "%llx,%llx:%1024s", &addr, &length, value) != 3)
+            if (!cvmx_debug_hexToLong(&buf, &addr)
+                || *buf++ != ','
+                || !cvmx_debug_hexToLong(&buf, &length)
+                || *buf++ != ':')
             {
                 cvmx_debug_printf("M packet corrupt: %s\n", buf);
                 goto error_packet;
             }
-            
+
             ptr = (unsigned char *)(long)addr;
             for (i = 0; i < length; i++)
             {
-                int c;
-                int n;
-                char tempstr[3] = {0, 0, 0};
-                memcpy (tempstr, &value[i * 2], 2);
+                int n, n1;
+                unsigned char c;
+
+                n = cvmx_debug_hex(buf[i * 2]);
+                n1 = cvmx_debug_hex(buf[i * 2 + 1]);
+                c = (n << 4) | n1;
             
-                n = sscanf(tempstr, "%2x", &c);
-                if (n != 1)
+                if (n == -1 || n1 == -1)
                 {
-                    cvmx_debug_printf("M packet corrupt: %s\n", &value[i * 2]);
+                    cvmx_debug_printf("M packet corrupt: %s\n", &buf[i * 2]);
                     goto error_packet;
                 }
                 /* Probe memory.  If not accessible fail.   */
@@ -716,30 +876,38 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
                       is the performance counter to set X is the performance
                       event.  [34] is to get the same thing.  */
         {
-            int perf_event = 0;
-            int counter, encoded_counter;
+            uint64_t perf_event = 0;
+            char encoded_counter = *buf++;
+            uint64_t counter;
             volatile cvmx_debug_core_context_t *context = cvmx_debug_core_context();
-            sscanf(buf, "%1d%x", &encoded_counter, &perf_event);
+
+            /* Ignore errors from the packet. */
+            cvmx_debug_hexToLong(&buf, &perf_event);
 
             switch (encoded_counter)
             {
-                case 1: /* Set performance counter0 event. */
-                case 2: /* Set performance counter1 event. */
+                case '1': /* Set performance counter0 event. */
+                case '2': /* Set performance counter1 event. */
 
-                counter = encoded_counter - 1;
+                counter = encoded_counter - '1';
                 context->cop0.perfval[counter] = 0;
-                cvmx_debug_set_perf_control_reg(perf_event, counter);
+                cvmx_debug_set_perf_control_reg(context, perf_event, counter);
                 break;
 
-                case 3: /* Get performance counter0 event. */
-                case 4: /* Get performance counter1 event. */
+                case '3': /* Get performance counter0 event. */
+                case '4': /* Get performance counter1 event. */
                 {
                     cvmx_core_perf_control_t c;
-                    counter = encoded_counter - 3;
+                    char outpacket[16*2 +2];
+                    counter = encoded_counter - '3';
                     /* Pass performance counter0 event and counter to
                        the debugger.  */
                     c.u32 = context->cop0.perfctrl[counter];
-                    cvmx_debug_putpacket("%llx,%llx", (long long) context->cop0.perfval[counter], (long long) c.s.event);
+                    cvmx_debug_int64_to_strhex(outpacket, context->cop0.perfval[counter]);
+                    outpacket[16] = ',';
+                    cvmx_debug_int64_to_strhex(&outpacket[17], c.s.event);
+                    outpacket[33] = 0;
+                    cvmx_debug_putpacket_noformat(outpacket);
                 }
                 break;
             }
@@ -782,21 +950,27 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
                 WP_ACCESS = 3
             };
 
-            int num, size;
-            long long addr;
-            enum type type;
-            char bp_type;
+            uint64_t num, size;
+            uint64_t addr;
+            uint64_t type;
+            char bp_type = *buf++;
             const int BE = 1, TE = 4;
-            int n;
             volatile cvmx_debug_core_context_t *context = cvmx_debug_core_context();
 
-            n = sscanf(buf, "%c%x,%llx,%x,%x", &bp_type, &num, &addr, &size, &type);
+            if (!cvmx_debug_hexToLong(&buf, &num)
+                || *buf++ != ','
+                || !cvmx_debug_hexToLong(&buf, &addr))
+            {
+                cvmx_debug_printf("Z packet corrupt: %s\n", &packet[1]);
+                goto error_packet;
+            }
+
             switch (bp_type)
             {
                 case 'i':	// Instruction hardware breakpoint
-                    if (n != 3 || num > 4)
+                    if (num > 4)
                     {
-                        cvmx_debug_printf("Z packet corrupt: %s\n", buf);
+                        cvmx_debug_printf("Z packet corrupt: %s\n", &packet[1]);
                         goto error_packet;
                     }
 
@@ -810,9 +984,15 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
                 {
                     uint64_t dbc = 0xff0 | BE | TE;
                     uint64_t dbm;
-                    if (n != 5 || num > 4)
+                    if (num > 4
+                        || *buf++ != ','
+                        || !cvmx_debug_hexToLong(&buf, &size)
+                        || *buf++ != ','
+                        || !cvmx_debug_hexToLong(&buf, &type)
+                        || type > WP_ACCESS
+                        || type < WP_LOAD)
                     {
-                        cvmx_debug_printf("Z packet corrupt: %s\n", buf);
+                        cvmx_debug_printf("Z packet corrupt: %s\n", &packet[1]);
                         goto error_packet;
                     }
 
@@ -831,7 +1011,7 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
                     break;
                 }
                 default:
-                    cvmx_debug_printf("z packet corrupt: %s\n", buf);
+                    cvmx_debug_printf("Z packet corrupt: %s\n", &packet[1]);
                     goto error_packet;
             }
         }
@@ -840,11 +1020,11 @@ static cvmx_debug_command_t cvmx_debug_process_packet(char *packet)
         case 'z': /* Remove hardware breakpoint: z[di]NN..N remove NN..Nth
 breakpoint.  */
         {
-            int num;
-            char bp_type;
+            uint64_t num;
+            char bp_type = *buf++;
             volatile cvmx_debug_core_context_t *context = cvmx_debug_core_context();
 
-            if (sscanf(buf, "%c%x", &bp_type, &num) != 2 || num > 4)
+            if (!cvmx_debug_hexToLong(&buf, &num) || num > 4)
             {
                 cvmx_debug_printf("z packet corrupt: %s\n", buf);
                 goto error_packet;
@@ -936,7 +1116,7 @@ static int cvmx_debug_single_step_exc(cvmx_debug_register_t *debug_reg)
 static void cvmx_debug_set_focus_core(cvmx_debug_state_t *state, int core)
 {
     if (state->ever_been_in_debug)
-        cvmx_debug_putpacket("!Core %2x taking focus.", core);
+        cvmx_debug_putcorepacket("taking focus.", core);
     cvmx_debug_comms[cvmx_debug_globals->comm_type]->change_core (state->focus_core, core);
     state->focus_core = core;
 }
@@ -962,7 +1142,7 @@ static void cvmx_debug_send_stop_reason(cvmx_debug_register_t *debug_reg, volati
 {
     /* Handle Debug Data Breakpoint Store/Load Exception. */
     if (debug_reg->s.ddbs || debug_reg->s.ddbl)
-        cvmx_debug_putpacket("T8:%x", (int) context->hw_dbp.status);
+        cvmx_debug_putpacket_hexint("T8:", (int) context->hw_dbp.status);
     else
         cvmx_debug_putpacket_noformat("T9");
 }
@@ -980,10 +1160,12 @@ static void cvmx_debug_clear_status(volatile cvmx_debug_core_context_t *context)
 
 static void cvmx_debug_sync_up_cores(void)
 {
-    cvmx_debug_state_t state;
+    /* NOTE this reads directly from the state array for speed reasons
+       and we don't change the array. */
     do {
-        state = cvmx_debug_get_state();
-    } while (state.step_all && state.handler_cores != 0);
+      asm("": : : "memory");
+    } while (cvmx_debug_globals->state[offsetof(cvmx_debug_state_t, step_all)/sizeof(uint32_t)]
+	     && cvmx_debug_globals->state[offsetof(cvmx_debug_state_t, handler_cores)/sizeof(uint32_t)] != 0);
 }
 
 /* Delay the focus core a little if it is likely another core needs to steal
@@ -1153,12 +1335,12 @@ static int cvmx_debug_perform_proxy(cvmx_debug_register_t *debug_reg, volatile c
     return 0;
 }
 
-static void cvmx_debug_save_core_context(volatile cvmx_debug_core_context_t *context)
+static void cvmx_debug_save_core_context(volatile cvmx_debug_core_context_t *context, uint64_t hi, uint64_t lo)
 {
     unsigned i;
-    memcpy((char *) context->regs, __cvmx_debug_save_regs_area, sizeof(context->regs));
-    asm("mflo %0" : "=r"(context->lo));
-    asm("mfhi %0" : "=r"(context->hi));
+    cvmx_debug_memcpy_align ((char *) context->regs, __cvmx_debug_save_regs_area, sizeof(context->regs));
+    context->lo = lo;
+    context->hi = hi;
     CVMX_MF_COP0(context->cop0.index, COP0_INDEX);
     CVMX_MF_COP0(context->cop0.entrylo[0], COP0_ENTRYLO0);
     CVMX_MF_COP0(context->cop0.entrylo[1], COP0_ENTRYLO1);
@@ -1209,10 +1391,9 @@ static void cvmx_debug_save_core_context(volatile cvmx_debug_core_context_t *con
 
 static void cvmx_debug_restore_core_context(volatile cvmx_debug_core_context_t *context)
 {
+    uint64_t hi, lo;
     int i;
-    memcpy(__cvmx_debug_save_regs_area, (char *) context->regs, sizeof(context->regs));
-    asm("mtlo %0" :: "r"(context->lo));
-    asm("mthi %0" :: "r"(context->hi));
+    cvmx_debug_memcpy_align (__cvmx_debug_save_regs_area, (char *) context->regs, sizeof(context->regs));
     /* We don't change the TLB so no need to restore it.  */
     cvmx_write_csr(CVMX_DEBUG_HW_DATA_BREAKPOINT_STATUS, context->hw_dbp.status);
     for (i = 0; i < 4; i++)
@@ -1245,6 +1426,10 @@ static void cvmx_debug_restore_core_context(volatile cvmx_debug_core_context_t *
     CVMX_MT_COP0(context->cop0.perfctrl[1], COP0_PERFCONTROL1);
     CVMX_MT_COP0(context->cop0.depc, COP0_DEPC);
     CVMX_MT_COP0(context->cop0.desave, COP0_DESAVE);
+    lo = context->lo;
+    hi = context->hi;
+    asm("mtlo %0" :: "r"(lo));
+    asm("mthi %0" :: "r"(hi));
 }
 
 static inline void cvmx_debug_print_cause(volatile cvmx_debug_core_context_t *context)
@@ -1273,7 +1458,7 @@ static inline void cvmx_debug_print_cause(volatile cvmx_debug_core_context_t *co
         cvmx_dprintf("Debug Single Step (DSS) exception\n");
 }
 
-void __cvmx_debug_handler_stage3 (void)
+void __cvmx_debug_handler_stage3 (uint64_t lo, uint64_t hi)
 {
     volatile cvmx_debug_core_context_t *context;
     int comms_changed = 0;
@@ -1293,7 +1478,7 @@ void __cvmx_debug_handler_stage3 (void)
     }
 
     context = cvmx_debug_core_context();
-    cvmx_debug_save_core_context(context);
+    cvmx_debug_save_core_context(context, hi, lo);
 
     {
         cvmx_debug_state_t state;
@@ -1402,7 +1587,7 @@ void cvmx_debug_finish(void)
 
     /* Tell the user the core has finished. */
     if (state.ever_been_in_debug)
-        cvmx_debug_putpacket("!Core %d finish.", coreid);
+        cvmx_debug_putcorepacket("finished.", coreid);
 
     /* Notify the debugger if all cores have completed the program */
     if ((cvmx_debug_core_mask () & state.core_finished) == cvmx_debug_core_mask ())
