@@ -310,7 +310,7 @@ int cvm_oct_transmit_qos(struct net_device *dev,
 
 	/* Build the PKO command */
 	pko_command.u64 = 0;
-	pko_command.s.n2 = 1; /* Don't pollute L2 with the outgoing packet */
+	pko_command.s.n2 = 0; /* pollute L2 with the outgoing packet */
 	pko_command.s.dontfree = !do_free;
 	pko_command.s.segs = work->word2.s.bufs;
 	pko_command.s.total_bytes = work->len;
