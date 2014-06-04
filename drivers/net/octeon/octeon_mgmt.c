@@ -198,9 +198,7 @@ static ktime_t ptp_to_ktime(uint64_t ptptime)
 	    important that this sequence take the same amount of time to
 	    reduce jitter */
 	ktimebase = ktime_get_real();
-	/* FIXME: Needed for CN63XX errata */
-	cvmx_read_csr(CVMX_MIO_PTP_CLOCK_HI);
-	ptpbase = cvmx_read_csr(CVMX_MIO_PTP_CLOCK_HI);
+	ptpbase = octeon_read_ptp_csr(CVMX_MIO_PTP_CLOCK_HI);
 	local_irq_restore(flags);
 
 	return ktime_sub_ns(ktimebase, ptpbase - ptptime);

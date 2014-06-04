@@ -53,6 +53,7 @@
 #include "ethernet-mdio.h"
 #include "ethernet-util.h"
 
+extern cvmx_bootinfo_t *octeon_bootinfo;
 
 #if defined(CONFIG_OCTEON_NUM_PACKET_BUFFERS) \
 	&& CONFIG_OCTEON_NUM_PACKET_BUFFERS
@@ -119,6 +120,8 @@ MODULE_PARM_DESC(max_rx_cpus, "\n"
 int rx_napi_weight = 32;
 module_param(rx_napi_weight, int, 0444);
 MODULE_PARM_DESC(rx_napi_weight, "The NAPI WEIGHT parameter.");
+
+extern int (*ubnt_eth_name_hook)(int port, char *name);
 
 /*
  * The offset from mac_addr_base that should be used for the next port
@@ -378,15 +381,18 @@ static int cvm_oct_common_change_mtu(struct net_device *dev, int new_mtu)
 			cvmx_write_csr(CVMX_GMXX_RXX_FRM_MAX(index, interface),
 				       max_packet);
 		} else {
-			/*
-			 * Set the hardware to truncate packets larger
-			 * than the MTU and smaller the 64 bytes.
-			 */
-			union cvmx_pip_frm_len_chkx frm_len_chk;
-			frm_len_chk.u64 = 0;
-			frm_len_chk.s.minlen = 64;
-			frm_len_chk.s.maxlen = max_packet;
-			cvmx_write_csr(CVMX_PIP_FRM_LEN_CHKX(interface), frm_len_chk.u64);
+			cvmx_pip_prt_cfgx_t port_cfg;
+			port_cfg.u64 = cvmx_read_csr(CVMX_PIP_PRT_CFGX(index));
+			if (port_cfg.s.maxerr_en) {
+				/*
+				 * Disable the PIP check as it can
+				 * only be controlled over a group of
+				 * ports, let the check be done in the
+				 * GMX instead.
+				 */
+				port_cfg.s.maxerr_en = 0;
+				cvmx_write_csr(CVMX_PIP_PRT_CFGX(index), port_cfg.u64);
+			}
 		}
 		/*
 		 * Set the hardware to truncate packets larger than
@@ -952,6 +958,9 @@ static int __init cvm_oct_init_module(void)
 				break;
 #endif
 			}
+            
+            if (ubnt_eth_name_hook)
+                ubnt_eth_name_hook(port, dev->name);
 
 			if (!dev->netdev_ops) {
 				kfree(dev);

@@ -43,6 +43,8 @@
 
 #include <asm/octeon/octeon.h>
 #include <asm/octeon/cvmx-srio.h>
+#include <asm/octeon/cvmx-sriox-defs.h>
+#include <asm/octeon/cvmx-sriomaintx-defs.h>
 
 #include "octeon-ethernet.h"
 #include "ethernet-tx.h"
@@ -136,12 +138,13 @@ int cvm_oct_xmit_srio(struct sk_buff *skb, struct net_device *dev)
 	if (dest_mac>>40) {
 		struct rio_dev *rdev;
 		struct sk_buff *new_skb;
+		int srio_port = (priv->port - 40) >> 1;
 
 		/* The RIO device list must be protected by a global lock */
 		spin_lock(&rio_global_list_lock);
 		list_for_each_entry(rdev, &rio_devices, global_list) {
 			/* Skip devices not on my rio port */
-			if (rdev->net->hport->id != (priv->port&1))
+			if (rdev->net->hport->id != srio_port)
 				continue;
 			/* Skip switches */
 			if (rdev->destid == 0xffff)
@@ -192,18 +195,34 @@ int cvm_oct_xmit_srio(struct sk_buff *skb, struct net_device *dev)
  */
 int cvm_oct_srio_init(struct net_device *dev)
 {
+	struct octeon_ethernet *priv = netdev_priv(dev);
+	int srio_port = (priv->port - 40) >> 1;
+	uint32_t devid;
 	struct sockaddr sa;
+	cvmx_sriox_status_reg_t srio_status_reg;
 
 	dev->features |= NETIF_F_LLTX; /* We do our own locking, Linux doesn't need to */
 
 	SET_ETHTOOL_OPS(dev, &cvm_oct_ethtool_ops);
 
+	/* Make sure register access is allowed */
+	srio_status_reg.u64 = cvmx_read_csr(CVMX_SRIOX_STATUS_REG(srio_port));
+	if (!srio_status_reg.s.access)
+		return 0;
+
+	cvmx_srio_config_read32(srio_port, 0, -1, 1, 0, CVMX_SRIOMAINTX_PRI_DEV_ID(srio_port), &devid);
+
 	sa.sa_data[0] = 0;
 	sa.sa_data[1] = 0;
 	sa.sa_data[2] = 0;
 	sa.sa_data[3] = 0;
-	sa.sa_data[4] = 0; /* FIXME Device ID */
-	sa.sa_data[5] = 1;
+	if (devid >> 16) {
+		sa.sa_data[4] = 0;
+		sa.sa_data[5] = (devid >> 16) & 0xff;
+	} else {
+		sa.sa_data[4] = (devid >> 8) & 0xff;
+		sa.sa_data[5] = devid & 0xff;
+	}
 
 	dev->netdev_ops->ndo_set_mac_address(dev, &sa);
 	dev->netdev_ops->ndo_change_mtu(dev, dev->mtu);
