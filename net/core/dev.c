@@ -333,6 +333,14 @@ static inline void netdev_set_addr_lockdep_class(struct net_device *dev)
 }
 #endif
 
+#ifdef CONFIG_CAVIUM_OCTEON_IPFWD_OFFLOAD
+/* Cavium fast-path rx/tx hooks */
+uint32_t (*cvm_ipfwd_rx_hook)(struct sk_buff *) = NULL;
+int      (*cvm_ipfwd_tx_hook)(struct sk_buff *) = NULL;
+#endif
+
+int (*ubnt_eth_name_hook)(int port, char *name) = NULL;
+
 /*******************************************************************************
 
 		Protocol management and registration routines
@@ -1890,6 +1898,12 @@ int dev_queue_xmit(struct sk_buff *skb)
 	struct Qdisc *q;
 	int rc = -ENOMEM;
 
+#ifdef CONFIG_CAVIUM_OCTEON_IPFWD_OFFLOAD
+	if (cvm_ipfwd_tx_hook) {
+		if (cvm_ipfwd_tx_hook(skb) == (-ENOMEM))
+			goto out_kfree_skb;
+	}
+#endif
 	/* GSO will handle the following emulations directly. */
 	if (netif_needs_gso(dev, skb))
 		goto gso;
@@ -2309,6 +2323,12 @@ int netif_receive_skb(struct sk_buff *skb)
 	int ret = NET_RX_DROP;
 	__be16 type;
 
+#ifdef CONFIG_CAVIUM_OCTEON_IPFWD_OFFLOAD
+	if (cvm_ipfwd_rx_hook) {
+		if (!cvm_ipfwd_rx_hook(skb))
+			return NET_RX_SUCCESS;
+	}
+#endif
 	if (!skb->tstamp.tv64)
 		net_timestamp(skb);
 
@@ -5726,3 +5746,8 @@ static int __init initialize_hashrnd(void)
 
 late_initcall_sync(initialize_hashrnd);
 
+#ifdef CONFIG_CAVIUM_OCTEON_IPFWD_OFFLOAD
+EXPORT_SYMBOL(cvm_ipfwd_rx_hook);
+EXPORT_SYMBOL(cvm_ipfwd_tx_hook);
+#endif 
+EXPORT_SYMBOL(ubnt_eth_name_hook);
