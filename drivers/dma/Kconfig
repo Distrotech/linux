@@ -111,6 +111,14 @@ config SH_DMAE
 	help
 	  Enable support for the Renesas SuperH DMA controllers.
 
+config OCTEON_RAID_DMA_ENGINE
+	tristate "Octeon RAID DMA Support"
+	depends on DMADEVICES
+	select DMA_ENGINE
+	help
+	  Enable support for the Octeon RAID DMA controllers.
+	  This enables use of DMA engines for OCTEON RAID offload. 	
+
 config DMA_ENGINE
 	bool
 
