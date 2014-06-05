@@ -18,6 +18,18 @@
 #include <net/dst.h>
 #include <net/xfrm.h>
 
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+
+int (*cavium_ipsec_process)(void *, struct sk_buff *, int, int) = NULL;
+
+void set_cavium_ipsec_process(void *func)
+{
+     cavium_ipsec_process = func;
+     return;
+}
+EXPORT_SYMBOL(set_cavium_ipsec_process);
+#endif
+
 static int xfrm_output2(struct sk_buff *skb);
 
 static int xfrm_state_check_space(struct xfrm_state *x, struct sk_buff *skb)
@@ -84,7 +96,28 @@ static int xfrm_output_one(struct sk_buff *skb, int err)
 
 		spin_unlock_bh(&x->lock);
 
-		err = x->type->output(x, skb);
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+//#if 1
+        /*
+ *         * If Octeon IPSEC Acceleration module has been loaded
+ *         * call it, otherwise, follow the software path
+ *       */
+        if(cavium_ipsec_process)
+        {
+            if (skb_is_nonlinear(skb) &&
+                skb_linearize(skb) != 0) {
+                err = -ENOMEM;
+                goto error;
+            }
+            err = cavium_ipsec_process(x, skb, 0, 1 /*ENCRYPT*/);
+        }
+        else
+        {
+            err = x->type->output(x, skb);
+        }
+#else
+        err = x->type->output(x, skb);
+#endif
 		if (err == -EINPROGRESS)
 			goto out_exit;
 

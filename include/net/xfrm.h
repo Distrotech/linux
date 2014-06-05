@@ -217,6 +217,11 @@ struct xfrm_state
 	/* Private data of this transformer, format is opaque,
 	 * interpreted by xfrm_type methods. */
 	void			*data;
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY) 
+    void            *sa_handle;
+    struct xfrm_policy  *pol;
+#endif  /* defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY) */
+
 };
 
 static inline struct net *xs_net(struct xfrm_state *x)
@@ -495,6 +500,9 @@ struct xfrm_policy
 	u16			family;
 	struct xfrm_sec_ctx	*security;
 	struct xfrm_tmpl       	xfrm_vec[XFRM_MAX_DEPTH];
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+    struct xfrm_state   *x;
+#endif /* defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY) */
 };
 
 static inline struct net *xp_net(struct xfrm_policy *xp)
@@ -1534,6 +1542,12 @@ static inline int xfrm_aevent_is_on(struct net *net)
 	rcu_read_unlock();
 	return ret;
 }
+/*static inline void xfrm_aevent_doreplay(struct xfrm_state *x)
+{
+        if (xfrm_aevent_is_on())
+                xfrm_replay_notify(x, XFRM_REPLAY_UPDATE);
+}*/
+
 #endif
 
 static inline int xfrm_alg_len(struct xfrm_algo *alg)

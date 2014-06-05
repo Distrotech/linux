@@ -14,6 +14,11 @@
 #include <net/ip.h>
 #include <net/xfrm.h>
 
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+//#if 1
+extern int (*cavium_ipsec_process)(void *, struct sk_buff *, int, int);
+#endif
+
 static struct kmem_cache *secpath_cachep __read_mostly;
 
 void __secpath_destroy(struct sec_path *sp)
@@ -113,6 +118,9 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 	unsigned int family;
 	int decaps = 0;
 	int async = 0;
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+    	int offset = 0;
+#endif
 
 	/* A negative encap_type indicates async resumption. */
 	if (encap_type < 0) {
@@ -172,6 +180,49 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 			goto drop_unlock;
 		}
 
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+        /*
+ *      * If Octeon IPSEC Acceleration module has been loaded
+ *      * call it, otherwise, follow the software path
+ *      */
+        if (cavium_ipsec_process) {
+		if (x->props.replay_window && xfrm_replay_check(x, skb, seq)) {
+			XFRM_INC_STATS(net, LINUX_MIB_XFRMINSTATESEQERROR);
+			goto drop_unlock;
+		}
+
+            	if (xfrm_state_check_expire(x)) {
+			XFRM_INC_STATS(net, LINUX_MIB_XFRMINSTATEEXPIRED);
+                	goto drop_unlock;
+            	}
+
+            	spin_unlock(&x->lock);
+		XFRM_SKB_CB(skb)->seq.input = seq;
+
+            	switch (nexthdr) {
+                case IPPROTO_AH:
+                    offset = offsetof(struct ip_auth_hdr, spi);
+                    break;
+                case IPPROTO_ESP:
+                    offset = offsetof(struct ip_esp_hdr, spi);
+                    break;
+                default:
+                    return 1;
+            	}
+            	offset += (uint64_t)skb->data - (uint64_t)ip_hdr(skb);
+            /*
+ *          * skb->data points to the start of the esp/ah header
+ *          * but we require skb->data to point to the start of ip header.
+ *          */
+            	skb_push(skb, (unsigned int)((uint64_t)skb->data - (uint64_t)ip_hdr(skb)));
+            	if ((skb_is_nonlinear(skb) || skb_cloned(skb)) &&
+                	skb_linearize(skb) != 0) {
+                	err = -ENOMEM;
+                	goto drop_unlock;
+          	}
+            	nexthdr = cavium_ipsec_process(x, skb, offset, 0 /*DECRYPT*/);
+        } else  {  /* if (cavium_ipsec_process == NULL) */
+#endif
 		if (x->props.replay_window && xfrm_replay_check(x, skb, seq)) {
 			XFRM_INC_STATS(net, LINUX_MIB_XFRMINSTATESEQERROR);
 			goto drop_unlock;
@@ -187,6 +238,9 @@ int xfrm_input(struct sk_buff *skb, int nexthdr, __be32 spi, int encap_type)
 		XFRM_SKB_CB(skb)->seq.input = seq;
 
 		nexthdr = x->type->input(x, skb);
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+	}
+#endif
 
 		if (nexthdr == -EINPROGRESS)
 			return 0;
@@ -233,7 +287,6 @@ resume:
 			decaps = 1;
 			break;
 		}
-
 		/*
 		 * We need the inner address.  However, we only get here for
 		 * transport mode so the outer address is identical.

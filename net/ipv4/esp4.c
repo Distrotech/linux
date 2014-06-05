@@ -118,6 +118,7 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	int clen;
 	int alen;
 	int nfrags;
+	
 
 	/* skb is pure payload to encrypt */
 
@@ -129,7 +130,6 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	esp = x->data;
 	aead = esp->aead;
 	alen = crypto_aead_authsize(aead);
-
 	blksize = ALIGN(crypto_aead_blocksize(aead), 4);
 	clen = ALIGN(clen + 2, blksize);
 	if (esp->padlen)
@@ -213,8 +213,10 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	aead_givcrypt_set_giv(req, esph->enc_data,
 			      XFRM_SKB_CB(skb)->seq.output);
 
+	
 	ESP_SKB_CB(skb)->tmp = tmp;
 	err = crypto_aead_givencrypt(req);
+	
 	if (err == -EINPROGRESS)
 		goto error;
 
@@ -439,6 +441,12 @@ static void esp_destroy(struct xfrm_state *x)
 
 	crypto_free_aead(esp->aead);
 	kfree(esp);
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY) 
+	
+	kfree(esp->iv);
+	esp->iv = NULL;
+	
+#endif
 }
 
 static int esp_init_aead(struct xfrm_state *x)
@@ -560,18 +568,26 @@ static int esp_init_state(struct xfrm_state *x)
 
 	x->data = esp;
 
-	if (x->aead)
-		err = esp_init_aead(x);
-	else
-		err = esp_init_authenc(x);
+	if (x->aead) 
+		err = esp_init_aead(x); 
+	else 
+		err = esp_init_authenc(x); 
 
 	if (err)
 		goto error;
-
+	
 	aead = esp->aead;
 
 	esp->padlen = 0;
-
+	
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY)
+	if(crypto_aead_ivsize(aead))    {
+           esp->iv = kmalloc(crypto_aead_ivsize(aead), GFP_KERNEL);
+                if (unlikely(esp->iv == NULL))
+                    goto error;
+		esp->ivinitted = 0;
+       }
+#endif
 	x->props.header_len = sizeof(struct ip_esp_hdr) +
 			      crypto_aead_ivsize(aead);
 	if (x->props.mode == XFRM_MODE_TUNNEL)

@@ -11,6 +11,12 @@ struct esp_data {
 
 	/* Confidentiality & Integrity */
 	struct crypto_aead *aead;
+#if defined(CONFIG_CAVIUM_OCTEON_IPSEC) && defined(CONFIG_NET_KEY) 
+	 u8 *iv;
+	 int ivinitted;
+	 
+#endif	
+
 };
 
 extern void *pskb_put(struct sk_buff *skb, struct sk_buff *tail, int len);
