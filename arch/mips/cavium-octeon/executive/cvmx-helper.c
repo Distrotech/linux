@@ -455,7 +455,8 @@ static int __cvmx_helper_interface_setup_pko(int interface)
         priorities and replicate them in the second half.
         With per-core PKO queues (PKO lockless operation) all queues have
         the same priority. */
-    uint64_t priorities[16] = {8,7,6,5,4,3,2,1,8,7,6,5,4,3,2,1};
+   // uint64_t priorities[16] = {8,7,6,5,4,3,2,1,8,7,6,5,4,3,2,1};
+    uint64_t priorities[16] = {[0 ... 15] = 9};
 
     /* Setup the IPD/PIP and PKO for the ports discovered above. Here packet
         classification, tagging and output priorities are set */

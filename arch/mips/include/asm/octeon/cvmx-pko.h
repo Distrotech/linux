@@ -420,10 +420,10 @@ static inline cvmx_pko_status_t cvmx_pko_send_packet_finish3(uint64_t port, uint
 static inline int cvmx_pko_get_base_queue_per_core(int port, int core)
 {
 #ifndef CVMX_HELPER_PKO_MAX_PORTS_INTERFACE0
-    #define CVMX_HELPER_PKO_MAX_PORTS_INTERFACE0 16
+    #define CVMX_HELPER_PKO_MAX_PORTS_INTERFACE0 4
 #endif
 #ifndef CVMX_HELPER_PKO_MAX_PORTS_INTERFACE1
-    #define CVMX_HELPER_PKO_MAX_PORTS_INTERFACE1 16
+    #define CVMX_HELPER_PKO_MAX_PORTS_INTERFACE1 4
 #endif
 #ifndef CVMX_PKO_QUEUES_PER_PORT_SRIO0
     /* We use two queues per port for SRIO0. Having two queues per
