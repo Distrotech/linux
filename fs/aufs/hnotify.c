@@ -304,6 +304,7 @@ struct hn_job_args {
 static int hn_job(struct hn_job_args *a)
 {
 	const unsigned int isdir = au_ftest_hnjob(a->flags, ISDIR);
+	int e;
 
 	/* reset xino */
 	if (au_ftest_hnjob(a->flags, XINO0) && a->inode)
@@ -313,18 +314,19 @@ static int hn_job(struct hn_job_args *a)
 	    && a->inode
 	    && a->h_inode) {
 		mutex_lock_nested(&a->h_inode->i_mutex, AuLsc_I_CHILD);
-		if (!a->h_inode->i_nlink)
+		if (!a->h_inode->i_nlink
+		    && !(a->h_inode->i_state & I_LINKABLE))
 			hn_xino(a->inode, a->h_inode); /* ignore this error */
 		mutex_unlock(&a->h_inode->i_mutex);
 	}
 
 	/* make the generation obsolete */
 	if (au_ftest_hnjob(a->flags, GEN)) {
-		int err = -1;
+		e = -1;
 		if (a->inode)
-			err = hn_gen_by_inode(a->h_name, a->h_nlen, a->inode,
+			e = hn_gen_by_inode(a->h_name, a->h_nlen, a->inode,
 					      isdir);
-		if (err && a->dentry)
+		if (e && a->dentry)
 			hn_gen_by_name(a->dentry, isdir);
 		/* ignore this error */
 	}
