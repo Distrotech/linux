@@ -35,6 +35,9 @@
 #include <linux/netdev_features.h>
 #include <linux/sched.h>
 #include <net/flow_keys.h>
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+#include <linux/imq.h>
+#endif
 
 /* A. Checksumming of received packets by device.
  *
@@ -530,6 +533,9 @@ struct sk_buff {
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
 	char			cb[48] __aligned(8);
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+	void			*cb_next;
+#endif
 
 	unsigned long		_skb_refdst;
 	void			(*destructor)(struct sk_buff *skb);
@@ -538,6 +544,9 @@ struct sk_buff {
 #endif
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct nf_conntrack	*nfct;
+#endif
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+       struct nf_queue_entry   *nf_queue_entry;
 #endif
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	struct nf_bridge_info	*nf_bridge;
@@ -607,6 +616,9 @@ struct sk_buff {
 	__u8			remcsum_offload:1;
 	/* 3 or 5 bit hole */
 
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+	__u8			imq_flags:IMQ_F_BITS;
+#endif
 #ifdef CONFIG_NET_SCHED
 	__u16			tc_index;	/* traffic control index */
 #ifdef CONFIG_NET_CLS_ACT
@@ -754,6 +766,12 @@ void kfree_skb_list(struct sk_buff *segs);
 void skb_tx_error(struct sk_buff *skb);
 void consume_skb(struct sk_buff *skb);
 void  __kfree_skb(struct sk_buff *skb);
+
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+int skb_save_cb(struct sk_buff *skb);
+int skb_restore_cb(struct sk_buff *skb);
+#endif
+
 extern struct kmem_cache *skbuff_head_cache;
 
 void kfree_skb_partial(struct sk_buff *skb, bool head_stolen);
@@ -3162,6 +3180,10 @@ static inline void __nf_copy(struct sk_buff *dst, const struct sk_buff *src,
 	nf_conntrack_get(src->nfct);
 	if (copy)
 		dst->nfctinfo = src->nfctinfo;
+#endif
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+       dst->imq_flags = src->imq_flags;
+       dst->nf_queue_entry = src->nf_queue_entry;
 #endif
 #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
 	dst->nf_bridge  = src->nf_bridge;

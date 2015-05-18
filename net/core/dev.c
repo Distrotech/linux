@@ -135,6 +135,9 @@
 #include <linux/if_macvlan.h>
 #include <linux/errqueue.h>
 #include <linux/hrtimer.h>
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+#include <linux/imq.h>
+#endif
 
 #include "net-sysfs.h"
 
@@ -2588,7 +2591,11 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 	unsigned int len;
 	int rc;
 
+#if defined(CONFIG_IMQ) || defined(CONFIG_IMQ_MODULE)
+	if (!list_empty(&ptype_all) && !(skb->imq_flags & IMQ_F_ENQUEUE))
+#else
 	if (!list_empty(&ptype_all))
+#endif
 		dev_queue_xmit_nit(skb, dev);
 
 	len = skb->len;
