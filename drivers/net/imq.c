@@ -46,7 +46,6 @@ static struct nf_hook_ops imq_ops[] = {
 	{
 	/* imq_ingress_ipv4 */
 		.hook		= imq_nf_hook,
-		.owner		= THIS_MODULE,
 		.pf		= PF_INET,
 		.hooknum	= NF_INET_PRE_ROUTING,
 #if defined(CONFIG_IMQ_BEHAVIOR_BA) || defined(CONFIG_IMQ_BEHAVIOR_BB)
@@ -58,7 +57,6 @@ static struct nf_hook_ops imq_ops[] = {
 	{
 	/* imq_egress_ipv4 */
 		.hook		= imq_nf_hook,
-		.owner		= THIS_MODULE,
 		.pf		= PF_INET,
 		.hooknum	= NF_INET_POST_ROUTING,
 #if defined(CONFIG_IMQ_BEHAVIOR_AA) || defined(CONFIG_IMQ_BEHAVIOR_BA)
@@ -71,7 +69,6 @@ static struct nf_hook_ops imq_ops[] = {
 	{
 	/* imq_ingress_ipv6 */
 		.hook		= imq_nf_hook,
-		.owner		= THIS_MODULE,
 		.pf		= PF_INET6,
 		.hooknum	= NF_INET_PRE_ROUTING,
 #if defined(CONFIG_IMQ_BEHAVIOR_BA) || defined(CONFIG_IMQ_BEHAVIOR_BB)
@@ -83,7 +80,6 @@ static struct nf_hook_ops imq_ops[] = {
 	{
 	/* imq_egress_ipv6 */
 		.hook		= imq_nf_hook,
-		.owner		= THIS_MODULE,
 		.pf		= PF_INET6,
 		.hooknum	= NF_INET_POST_ROUTING,
 #if defined(CONFIG_IMQ_BEHAVIOR_AA) || defined(CONFIG_IMQ_BEHAVIOR_BA)
@@ -393,9 +389,8 @@ static struct nf_queue_entry *nf_queue_entry_dup(struct nf_queue_entry *e)
 {
 	struct nf_queue_entry *entry = kmemdup(e, e->size, GFP_ATOMIC);
 	if (entry) {
-		if (nf_queue_entry_get_refs(entry))
-			return entry;
-		kfree(entry);
+		nf_queue_entry_get_refs(entry);
+		return entry;
 	}
 	return NULL;
 }
@@ -691,7 +686,7 @@ packet_not_eaten_by_imq_dev:
 out:
 	return retval;
 }
-static unsigned int imq_nf_hook(const struct nf_hook_ops *hook_ops,
+static unsigned int imq_nf_hook(void *priv,
 				struct sk_buff *skb,
 				const struct nf_hook_state *state)
 {
