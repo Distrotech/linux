@@ -143,7 +143,9 @@ struct mmc_host_ops {
 	 * I/O. Returns the number of supported blocks for the request.
 	 */
 	int	(*multi_io_quirk)(struct mmc_card *card,
-				  unsigned int direction, int blk_size);
+				  unsigned int direction,
+				  u32 blk_pos,
+				  int blk_size);
 };
 
 struct mmc_card;
@@ -289,6 +291,7 @@ struct mmc_host {
 #define MMC_CAP2_HSX00_1_2V	(MMC_CAP2_HS200_1_2V_SDR | MMC_CAP2_HS400_1_2V)
 #define MMC_CAP2_SDIO_IRQ_NOTHREAD (1 << 17)
 #define MMC_CAP2_NO_WRITE_PROTECT (1 << 18)	/* No physical write protect pin, assume that card is always read-write */
+#define MMC_CAP2_FORCE_MULTIBLOCK (1 << 31)	/* Always use multiblock transfers */
 
 	mmc_pm_flag_t		pm_caps;	/* supported pm features */
 
