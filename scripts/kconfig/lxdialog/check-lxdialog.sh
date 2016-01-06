@@ -11,8 +11,17 @@ ldflags()
 			$cc -print-file-name=lib${lib}.${ext} | grep -q /
 			if [ $? -eq 0 ]; then
 				echo "-l${lib}"
-				exit
-			fi
+				case ${lib} in
+					ncursesw)tinfo="tinfow";;
+					ncurses)tinfo="tinfo";;
+					*)exit;;
+				esac;
+				$cc -print-file-name=lib${tinfo}.${ext} | grep -q /
+				if [ $? -eq 0 ]; then
+					echo "-l${tinfo}"
+				fi
+				exit;
+			fi;
 		done
 	done
 	exit 1
